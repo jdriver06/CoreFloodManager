@@ -70,7 +70,7 @@ class NameDialog(QDialog):
             self.close()
             return
 
-        icon = QIcon('UEORS logo cropped.png')
+        icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
         self.setWindowTitle(' ')
 
@@ -174,7 +174,7 @@ class ProjectManagerView(QDialog):
 
         self.project_manager = ProjectManager()
 
-        icon = QIcon('UEORS logo cropped.png')
+        icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
         sf = 92. / QApplication.primaryScreen().physicalDotsPerInch()
         self.sf = sf
