@@ -1,7 +1,7 @@
 
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QWidget, \
     QLineEdit, QDialog, QComboBox, QLabel, QGroupBox, QTabWidget, QListWidget, QGridLayout, QCheckBox, QMessageBox, \
-    QTextEdit
+    QTextEdit, QScrollArea
 from PyQt5.Qt import QIcon, Qt, QFont
 from PyQt5.QtGui import QMouseEvent, QCloseEvent, QKeyEvent
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -11,7 +11,7 @@ import flood
 import core
 import reports
 import j_utils as utils
-from numpy import isnan, array, round, append, cumsum, where, isinf, divide
+from numpy import isnan, array, round, append, cumsum, where, isinf, divide, pi, sqrt
 # from docx import Document
 # from docx.shared import Inches
 
@@ -177,12 +177,16 @@ class FloodExperiment:
 
         return oil_if
 
+    def get_pv(self) -> float:
+
+        return self.petro_parameters['phi'][1] * self.core.my_bulk_volume()
+
     def calculate_saturation(self, flood_list: list, i: int, j: int, sw0: float, direction: bool) -> float:
         """ The function calculate_saturation calculates the saturation at the ith flood from reference flood j of
         saturation sw0 incrementing in the forward direction (True) or reverse direction (False). """
 
         sw = sw0
-        pv = self.petro_parameters['phi'][1] * self.core.my_bulk_volume()
+        pv = self.get_pv()
 
         if direction:
             # If we are incrementing forward from the reference flood j, take a slice of all floods after j and up to
@@ -330,6 +334,17 @@ class FloodExperiment:
             # print('sw', sw)
             return sw
 
+    def get_initial_saturation(self) -> float:
+
+        fl0 = self.floods[0]
+        sw1 = self.get_flood_saturation(fl0)
+        pv = self.get_pv()
+
+        if isinstance(fl0.fluid.specific_fluid, fluid.BrineInjectionFluid):
+            return sw1 - fl0.effluent.oil_produced() / pv
+
+        return sw1 + fl0.effluent.brine_produced() / pv
+
     def get_core_mass(self, cut_num: int) -> float:
 
         mass = 0.
@@ -363,7 +378,7 @@ class FloodExperimentView(QMainWindow):
     def __init__(self, fe: FloodExperiment, parent=None):
         super(FloodExperimentView, self).__init__(parent=parent)
 
-        icon = QIcon('UEORS logo cropped.png')
+        icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
         self.setWindowTitle('Flood Experiment: ' + fe.name + ' on core ' + fe.core.name)
         self.setFixedSize(1000, 400)
@@ -420,8 +435,8 @@ class FloodExperimentView(QMainWindow):
         self.petrophysics_button.clicked.connect(self.petrophysics_view)
         self.plan_button = QPushButton('Plan')
         self.plan_button.clicked.connect(self.plan_view)
-        self.report_button = QPushButton('Report')
-        self.report_button.clicked.connect(self.report_view)
+        self.report_button = QPushButton('Summary')
+        self.report_button.clicked.connect(self.summary_view)
         self.export_button = QPushButton('Export')
         self.export_button.clicked.connect(self.export_to_excel_wrapper)
         font = self.insert_button.font()
@@ -442,13 +457,14 @@ class FloodExperimentView(QMainWindow):
         b_layout.addWidget(self.plan_button)
         b_layout.addWidget(self.report_button)
         b_layout.addWidget(self.export_button)
-        self.report_button.setEnabled(False)
+        # self.report_button.setEnabled(False)
 
         self.core = fe.core
         self.experiment = fe
         self.flood_icons = []
         self.flood_forms = []
         self.petro_view = None
+        self.summary_viewer = None
         self.selected_icon = -1
         self.start_icon = -1
         self.total_floods_created = 0
@@ -591,6 +607,7 @@ class FloodExperimentView(QMainWindow):
                     kk = k + 1
             icon.if_combobox.setCurrentIndex(kk)
             icon.cut_combobox.setCurrentIndex(icon.flood.cut_num)
+            icon.rev_checkbox.setChecked(icon.flood.reverse_flow)
             icon.select(False)
 
         self.flood_icons[j].select()
@@ -701,6 +718,12 @@ class FloodExperimentView(QMainWindow):
             # print(i, fl.name, fl.n_phases)
             # print(self.experiment.get_flood_saturation(fl))
 
+    def update_flood_forms_saturation_text(self):
+
+        for form in self.flood_forms:
+            if form is not None:
+                form.update_saturation_text()
+
     def injection_fluids_view(self):
         if self.if_view is None:
             self.if_view = InjectionFluidsView(self.experiment.injection_fluids_list, self)
@@ -730,6 +753,14 @@ class FloodExperimentView(QMainWindow):
 
         builder = ReportBuilder(self)
         builder.exec_()
+
+    def summary_view(self):
+
+        if self.summary_viewer is not None:
+            return
+
+        self.summary_viewer = SummaryViewer(self)
+        self.summary_viewer.show()
 
     def export_to_excel_wrapper(self):
 
@@ -780,8 +811,11 @@ class FloodExperimentView(QMainWindow):
                     ws.write_row(0, 3, line_0)
                     ws.write_row(1, 0, line_1)
 
+                    iv = [fl.get_nn(i) for i in range(5)]
+
                     write_data = [fr_data, v_data, v_data / fl.get_experiment_total_pore_volume(),
-                                  p_data[0], p_data[1], p_data[2], p_data[3], p_data[4]]
+                                  p_data[0], p_data[iv[1]], p_data[iv[2]], p_data[iv[3]], p_data[iv[4]]]
+
                     for i in range(5):
                         write_data.append(p_data[i] - fl.used_offsets[i])
                     if is_rf_data:
@@ -1211,6 +1245,7 @@ class FloodIcon(QFrame):
         # rev_text.setFont(font)
         # rev_text.setStyleSheet('background: white')
         self.rev_checkbox = QCheckBox(parent=self, text='Reverse Flow?')
+        self.rev_checkbox.setChecked(self.flood.reverse_flow)
         self.rev_checkbox.setFont(font)
         self.rev_checkbox.setStyleSheet('background: white; border: 0 px solid gray')
         self.rev_checkbox.clicked.connect(self.rev_flow)
@@ -1339,10 +1374,13 @@ class FloodIcon(QFrame):
 
         if mcf is None or fe_view.control_key_pressed:
             c_flood.fluid = self.injection_fluid
-            cff = flood.CoreFloodForm(self.injection_fluid, fe_view.core, fe_view, fe_view, c_flood, self)
-            fe_view.flood_forms[fe_view.selected_icon] = cff
-            cff.show()
-            self.cff = cff
+            try:
+                cff = flood.CoreFloodForm(self.injection_fluid, fe_view.core, fe_view, fe_view, c_flood, self)
+                fe_view.flood_forms[fe_view.selected_icon] = cff
+                cff.show()
+                self.cff = cff
+            except Exception as e:
+                QMessageBox(parent=self, text=str(e)).exec_()
 
             if fe_view.control_key_pressed:
                 fe_view.control_key_pressed = False
@@ -1382,7 +1420,7 @@ class FloodIcon(QFrame):
                     for additive in self.injection_fluid.ref_objects:
                         if isinstance(additive, fluid.Polymer):
                             self.background_color = 'lightgray'
-                        elif isinstance(additive, fluid.Surfactant):
+                        elif isinstance(additive, fluid.Surfactant) or isinstance(additive, fluid.Formulation):
                             self.background_color = '#CDCD6B'
                             break
 
@@ -1420,6 +1458,17 @@ class FloodIcon(QFrame):
     def rev_flow(self):
 
         self.flood.reverse_flow = self.rev_checkbox.isChecked()
+        j = self.fe_view.experiment.floods.index(self.flood)
+        if self.fe_view.flood_forms[j] is not None:
+            self.fe_view.flood_forms[j].update_from_source()
+        mf = self.fe_view.experiment.find_multiflood(self.flood)
+        if mf is not None:
+            for i, icon in enumerate(self.fe_view.flood_icons):
+                fl = self.fe_view.experiment.floods[i]
+                if fl in mf.ref_floods:
+                    fl.reverse_flow = self.rev_checkbox.isChecked()
+                    icon.rev_checkbox.setChecked(self.rev_checkbox.isChecked())
+            mf.reverse_flow = self.flood.reverse_flow
 
     def closeEvent(self, a0: QCloseEvent):
         print('closing flood icon', self.cff)
@@ -1980,6 +2029,169 @@ class PetrophysicsView(QDialog):
     def closeEvent(self, a0: QCloseEvent):
 
         self.parent().petro_view = None
+
+
+class SummaryViewer(QDialog):
+
+    def __init__(self, parent: FloodExperimentView):
+        super(SummaryViewer, self).__init__(parent=parent)
+        self.sf = parent.sf
+        self.experiment = parent.experiment
+
+        self.resize(int(800 * self.sf), int(500 * self.sf))
+        # self.setFixedWidth(int(800 * self.sf))
+        # self.setFixedHeight(int(400 * self.sf))
+        self.setWindowTitle('Experiment Summary: {}'.format(self.experiment.name))
+
+        main_lyt = QGridLayout()
+        self.main_lyt = main_lyt
+        self.setLayout(main_lyt)
+        self.scroll_area = QScrollArea(parent=self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.reload_button = QPushButton(parent=self, text='Reload')
+        self.reload_button.clicked.connect(self.load_experiment)
+        main_lyt.addWidget(self.reload_button)
+        main_lyt.addWidget(self.scroll_area)
+
+        lyt = QGridLayout()
+        self.lyt = lyt
+        self.scroll_widget = QWidget()
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.scroll_widget.setLayout(lyt)
+
+        self.core_properties_label = QLabel(parent=self.scroll_widget, text='Core Properties')
+        self.core_name_label = QLabel(parent=self.scroll_widget)
+        self.core_diameter_label = QLabel(parent=self.scroll_widget)
+        self.core_area_label = QLabel(parent=self.scroll_widget)
+        self.core_length_label = QLabel(parent=self.scroll_widget)
+        self.pore_volume_label = QLabel(parent=self.scroll_widget)
+        self.porosity_label = QLabel(parent=self.scroll_widget)
+        self.core_lithology_label = QLabel(parent=self.scroll_widget)
+        self.core_mass_label = QLabel(parent=self.scroll_widget)
+        self.floods_label = QLabel(parent=self.scroll_widget, text='Flood Info')
+
+        self.core_labels = [self.core_name_label, self.core_diameter_label, self.core_area_label,
+                            self.core_length_label, self.pore_volume_label, self.porosity_label,
+                            self.core_lithology_label, self.core_mass_label]
+
+        self.flood_labels = []
+        self.plateau_labels = []
+
+        font = self.core_name_label.font()
+        font.setFamily('Courier')
+        self.label_font = font
+        font = self.core_name_label.font()
+        font.setBold(True)
+        font.setFamily('Courier')
+        self.flood_label_font = font
+
+        title_font = self.core_properties_label.font()
+        title_font.setBold(True)
+        title_font.setPointSize(12)
+        self.title_font = title_font
+        self.core_properties_label.setFont(title_font)
+        self.core_properties_label.setAlignment(Qt.AlignHCenter)
+        lyt.addWidget(self.core_properties_label)
+
+        self.floods_label.setFont(title_font)
+        self.floods_label.setAlignment(Qt.AlignHCenter)
+
+        for i, label in enumerate(self.core_labels):
+            label.setFont(font)
+            lyt.addWidget(label, i + 1, 0, 1, 1)
+
+        lyt.addWidget(self.floods_label)
+
+        try:
+            self.load_experiment()
+        except Exception as e:
+            QMessageBox(parent=self, text=str(e)).exec_()
+
+    def load_experiment(self):
+
+        exp = self.experiment
+        c = exp.core
+        cs = c.core_sections[0]
+        d = sqrt((4. / pi) * c.my_area())
+        porosity = exp.get_pv() / c.my_bulk_volume()
+
+        self.core_name_label.setText('Core name: {}'.format(c.name))
+        self.core_diameter_label.setText('Core diameter: {:.2f} cm, {:.3f} in'.format(d, d / 2.54))
+        self.core_area_label.setText('Core CS area: {:.2f} cm^2'.format(c.my_area()))
+        self.core_length_label.setText('Core length: {:.2f} cm, {:.3f} in'.format(c.my_length(), c.my_length() / 2.54))
+        self.pore_volume_label.setText('Pore volume: {:.1f} mL'.format(exp.get_pv()))
+        self.porosity_label.setText('Porosity: {:.2f}%'.format(100. * porosity))
+        self.core_lithology_label.setText('Lithology: {} ({} g/cc)'.format(cs.lithology, cs.densities[cs.lithology]))
+        self.core_mass_label.setText('Core mass: {:.1f} g'.format(exp.get_core_mass(0)))
+
+        for label in self.flood_labels:
+            self.lyt.removeWidget(label)
+            label.destroy()
+
+        for label in self.plateau_labels:
+            self.lyt.removeWidget(label)
+            label.destroy()
+
+        sw0 = exp.get_initial_saturation()
+        sw_final = 1.
+        row = 10
+
+        for i, fl in enumerate(exp.binned_floods()):
+            label = QLabel(parent=self.scroll_widget)
+            if i == 0:
+                sw_init = sw0
+                sw_final = exp.get_flood_saturation(fl)
+            else:
+                sw_init = sw_final
+                sw_final = exp.get_flood_saturation(fl)
+
+            label.setText('{}, Sw {:.3f} -> {:.3f}'.format(fl.name, sw_init, sw_final))
+            if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid) or fl.get_background_color() == 'black':
+                label.setStyleSheet('QLabel{color: white; background-color: ' + fl.get_background_color() + '};')
+            else:
+                label.setStyleSheet('QLabel{background-color: ' + fl.get_background_color() + '};')
+            label.setFont(self.flood_label_font)
+            self.lyt.addWidget(label, row, 0, 1, 1)
+            self.flood_labels.append(label)
+
+            row += 1
+
+            if fl.plateau_whole:
+                print(fl.plateau_x)
+                j = 0
+                for plateau_w, plateau_1, plateau_2, plateau_3, plateau_4 in zip(fl.plateau_whole, fl.plateau_sec1,
+                                                                                 fl.plateau_sec2, fl.plateau_sec3,
+                                                                                 fl.plateau_sec4):
+                    p_label = QLabel(parent=self.scroll_widget)
+                    p_label.setFont(self.label_font)
+                    p_text = '    ' + \
+                             'W: ' + '{:.1f}'.format(plateau_w).ljust(6) + 'psi' \
+                             '  1: ' + '{:.1f}'.format(plateau_1).ljust(6) + 'psi' \
+                             '  2: ' + '{:.1f}'.format(plateau_2).ljust(6) + 'psi' \
+                             '  3: ' + '{:.1f}'.format(plateau_3).ljust(6) + 'psi' \
+                             '  4: ' + '{:.1f}'.format(plateau_4).ljust(6) + 'psi' \
+                             '  ' + '{:.2f}'.format(fl.get_fluid_viscosity(j)).rjust(7) + ' cP'
+
+                    p_label.setText(p_text)
+                    p_label.setStyleSheet('QLabel{background-color: yellow};')
+                    self.lyt.addWidget(p_label, row, 0, 1, 1)
+                    self.plateau_labels.append(p_label)
+
+                    row += 1
+                    j += 1
+
+            label = QLabel(parent=self.scroll_widget)
+            label.setFont(self.flood_label_font)
+            self.lyt.addWidget(label, row, 0, 1, 1)
+            self.flood_labels.append(label)
+
+            row += 1
+
+    def closeEvent(self, a0: QCloseEvent):
+
+        self.parent().summary_viewer = None
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from filelock import FileLock
 from copy import deepcopy
 
 
-__version__ = '0.9.6'
+__version__ = '0.9.8'
 
 # Patched issue with extra nan entry in oil if temps by discarding in polymer solution brine_if.
 
@@ -46,7 +46,9 @@ version_list = ['0.1.0',
                 '0.9.2',
                 '0.9.3',
                 '0.9.4',
-                '0.9.5']
+                '0.9.5',
+                '0.9.6',
+                '0.9.7']
 
 
 class ProjectManager:
@@ -702,6 +704,12 @@ class ProjectManagerView(QDialog):
             pass
 
         if version_list[i] == '0.9.5':
+            pass
+
+        if version_list[i] == '0.9.6':
+            pass
+
+        if version_list[i] == '0.9.7':
             pass
 
     @staticmethod

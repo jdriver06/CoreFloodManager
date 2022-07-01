@@ -388,7 +388,7 @@ class CoreViewForm(QMainWindow):
             self.setWindowTitle('Core Viewer: ' + c.name)
         else:
             self.setWindowTitle('Core Viewer: New_Core')
-        icon = QIcon('UEORS logo cropped.png')
+        icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
 
         self.file_menu = QMenu('&File', self)

@@ -251,7 +251,7 @@ class ProducedFluidsView(QDialog):
         else:
             self.setWindowTitle('Produced Fluids Tool: ' + parent.flood.name)
 
-        self.setWindowIcon(QIcon('UEORS logo cropped.png'))
+        self.setWindowIcon(QIcon('Coreholder Cropped.jpg'))
         if parent is not None:
             sf = parent.width() / 800.
         else:
@@ -647,6 +647,7 @@ class ProducedFluidsView(QDialog):
             self.parent().effluent_view = None
             print(self.produced_fluids.measurements[1, :])
             self.parent().flood.effluent = self.produced_fluids
+            self.parent().linked_widget.update_flood_forms_saturation_text()
 
 
 class ProducedFluidsTable(QTableWidget):

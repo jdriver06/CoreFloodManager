@@ -2561,7 +2561,7 @@ class BrineTool(QDialog):
         super(BrineTool, self).__init__(parent=parent)
 
         # Set simple dialog properties.
-        self.setWindowIcon(QIcon('UEORS logo cropped.png'))
+        self.setWindowIcon(QIcon('Coreholder Cropped.jpg'))
         self.setWindowTitle('Brine Tool')
         sf = parent.parent().width() / 900.
         self.sf = sf
@@ -4212,7 +4212,7 @@ class PolymerSolutionView(QMainWindow):
                 sf = 1.
 
         self.setFixedSize(int(sf * 550), int(sf * 550))
-        self.setWindowIcon(QIcon('UEORS logo cropped.png'))
+        self.setWindowIcon(QIcon('Coreholder Cropped.jpg'))
 
         ##### Menus #####
 

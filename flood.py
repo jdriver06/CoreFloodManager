@@ -137,6 +137,30 @@ class CoreFlood:
 
         return self.core.my_bulk_volume() * self.experiment.petro_parameters['phi'][1]
 
+    def get_background_color(self) -> str:
+
+        if self.fluid is None or self.fluid not in self.experiment.injection_fluids_list.signal_lists[0].objects:
+            return 'black'
+
+        background_color = 'black'
+
+        if isinstance(self.fluid.specific_fluid, BrineInjectionFluid):
+            background_color = 'lightblue'
+            for additive in self.fluid.ref_objects:
+                if isinstance(additive, Polymer):
+                    background_color = 'lightgray'
+                elif isinstance(additive, Surfactant) or isinstance(additive, Formulation):
+                    background_color = '#CDCD6B'
+                    break
+
+        elif isinstance(self.fluid.specific_fluid, OilInjectionFluid):
+            background_color = '#783C00'
+            for additive in self.fluid.ref_objects:
+                if isinstance(additive, Gas):
+                    background_color = '#B45A00'
+
+        return background_color
+
     def get_fluids_list(self) -> list:
 
         return [self.fluid]
@@ -269,9 +293,76 @@ class CoreFlood:
 
         return shear
 
+    def get_fluid_viscosity(self, i: int) -> float:
+
+        p_line_is = range(len(self.plateau_whole))
+
+        if i not in p_line_is:
+            return np.nan
+
+        excluded = np.setdiff1d(p_line_is, [i])
+        shear = 0.
+        try:
+            shear = self.get_plateau_shear_rates(self.experiment, list(excluded))[0]
+        except Exception as e:
+            msg = QMessageBox(text=str(e))
+            msg.exec_()
+
+        mu = np.nan
+        plateau_fluid = self.get_plateau_fluids(excluded)[0]
+        ps = plateau_fluid.specific_fluid.polymer_solution
+        fluid_type = plateau_fluid.get_fluid_type()
+        get_v = False
+
+        if fluid_type == FluidType.BRINE or fluid_type == FluidType.LIVE_OIL:
+            get_v = True
+        elif fluid_type == FluidType.OIL and ps.stored_averages:
+            get_v = True
+        elif fluid_type == FluidType.POLYMER_SOLUTION and ps.stored_averages:
+            get_v = True
+
+        if get_v:
+            try:
+                print('temp, shear', self.temperature, shear)
+                mu = plateau_fluid.get_viscosity(self.temperature, shear)
+                print('mu:', mu)
+            except Exception as e:
+                msg = QMessageBox(text=str(e))
+                msg.exec_()
+
+        elif fluid_type == FluidType.POLYMER_SOLUTION:
+            poly = ps.primary_additive
+            bf = ps.base_fluid
+            conc = ps.concentration
+            try:
+                mu = poly.estimate_viscosity(bf, self.temperature, shear, conc)
+                if np.isnan(mu):
+                    mu = bf.get_viscosity(self.temperature)
+            except Exception as e:
+                msg = QMessageBox(text=str(e))
+                msg.exec_()
+
+        return mu
+
     def add_data(self, x_data, y_data, n, color=None, mode='t', new_data=True):
         self.p_data[n] = y_data.copy()
         self.set_curve_data(x_data, y_data, n, color, mode, new_data)
+
+    def get_nn(self, n: int) -> int:
+        """Generate index for plot curve under standard or reverse flow conditions."""
+
+        nn = n
+        if self.reverse_flow:
+            if nn == 1:
+                nn = 4
+            elif nn == 2:
+                nn = 3
+            elif nn == 3:
+                nn = 2
+            elif nn == 4:
+                nn = 1
+
+        return nn
 
     def set_curve_data(self, x_data, y_data, n, color=None, mode='t', new_data=True):
 
@@ -376,18 +467,23 @@ class CoreFlood:
         l = self.experiment.core.my_length()
         a = self.experiment.core.my_area()
 
+        lis = []
         for i in range(5):
             if i == 0:
-                li = l
+                lis.append(l)
             else:
                 if 7.62 * i < l:
-                    li = 7.62
+                    lis.append(7.62)
                 else:
-                    li = l - 7.62 * (i - 1.)
+                    lis.append(l - 7.62 * (i - 1.))
+
+        for i in range(5):
             # Get pressure data in Ba.
             p_data_offset = 68947.6 * (self.p_data[i] - self.used_offsets[i])
+            if i == 4:
+                print(p_data_offset[:20] / 68947.6)
             # Get running implied permeability to viscosity ratio.
-            perm_over_visc = np.divide(li * fvt, a * p_data_offset)
+            perm_over_visc = np.divide(lis[i] * fvt, a * p_data_offset)
             # Resistance factor is ratio of perm to viscosity of reference flood to running implied perm to viscosity.
             self.rf_data[i] = np.divide(k[i] / mu, perm_over_visc)
 
@@ -437,13 +533,14 @@ class CoreFlood:
         if self.flood_view.y_view == FloodYView.PRESSURE:
             y_data_n = self.p_data.copy()
             for i, offset in enumerate(self.used_offsets):
-                y_data_n[i] = y_data_n[i] - offset
+                y_data_n[i] = y_data_n[i] - self.used_offsets[i]
         else:
             y_data_n = self.rf_data.copy()
 
         i = -1
 
-        for curve, y_data in zip(self.flood_view.curves, y_data_n):
+        for n, y_data in enumerate(y_data_n):
+            curve = self.flood_view.curves[n]
             i += 1
             yd = y_data.copy()
             curve.replace(series_to_polyline(x_data, yd.tolist()))
@@ -825,7 +922,7 @@ class CoreFloodForm(QMainWindow):
         self.chart = QChart(flags=Qt.WindowFlags())
 
         self.chart.legend().hide()
-        icon = QIcon('UEORS logo cropped.png')
+        icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
         sf = linked_widget.width() / 1000
         self.view = CoreFloodChartView(self.chart, self)
@@ -905,11 +1002,14 @@ class CoreFloodForm(QMainWindow):
         #     f = self.flood.ref_floods[-1]
         # else:
         #     f = self.flood
-        sw = self.linked_widget.experiment.get_flood_saturation(self.flood)
-        saturation_text = 'Sw = %.3f' % sw
-        self.saturation_label = QLabel(parent=l_widget, text=saturation_text)
+        # sw = self.linked_widget.experiment.get_flood_saturation(self.flood)
+        # saturation_text = 'Sw = %.3f' % sw
+
+        self.saturation_label = QLabel(parent=l_widget, text='')
         self.saturation_label.move(int(sf * 700), 0)
         self.saturation_label.setFont(l_font)
+
+        self.update_saturation_text()
 
         self.l_widget = l_widget
 
@@ -1006,11 +1106,11 @@ class CoreFloodForm(QMainWindow):
         if self.flood.time_data.size > 1:
             print('offsets:', self.flood.used_offsets)
             print('first data:', self.flood.p_data[0][0], self.flood.p_data[1][0])
-            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[0], 0, Qt.black)
-            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[1], 1, Qt.red)
-            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[2], 2, Qt.blue)
-            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[3], 3, Qt.darkGreen)
-            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[4], 4, Qt.magenta)
+            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[0], 0, self.get_curve_color(0))
+            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[1], 1, self.get_curve_color(1))
+            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[2], 2, self.get_curve_color(2))
+            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[3], 3, self.get_curve_color(3))
+            self.flood.set_curve_data(self.flood.time_data, self.flood.p_data[4], 4, self.get_curve_color(4))
 
             self.zoom_mode()
 
@@ -1053,6 +1153,12 @@ class CoreFloodForm(QMainWindow):
         self.flow_toolbar.setVisible(visible)
         self.l_widget.setVisible(visible)
 
+    @staticmethod
+    def get_curve_color(n: int):
+
+        colors = [Qt.black, Qt.red, Qt.blue, Qt.darkGreen, Qt.magenta]
+        return colors[n]
+
     def set_axis_limits(self):
         if self.ax_limits_dlg is None:
             self.ax_limits_dlg = AxisLimitsDlg(self)
@@ -1070,6 +1176,12 @@ class CoreFloodForm(QMainWindow):
                 self.kro_view = RelPermDlg(self, RelPermMode.kro)
             except Exception as e:
                 print('Error with RelPermDlg:', e)
+
+    def update_saturation_text(self):
+
+        sw = self.linked_widget.experiment.get_flood_saturation(self.flood)
+        saturation_text = 'Sw = %.3f' % sw
+        self.saturation_label.setText(saturation_text)
 
     def calc_perm(self):
         """This routine executes when the Calc Perm action from the Tools menu is clicked. It performs some checks on
@@ -1588,12 +1700,20 @@ class CoreFloodForm(QMainWindow):
         else:
             mode = 't'
         print(mode)
+
+        iv = [self.flood.get_nn(i) for i in range(5)]
+
         try:
-            self.flood.add_data(x_data, pressure_data.values[:, 0], 0, color=Qt.black, mode=mode, new_data=False)
-            self.flood.add_data(x_data, pressure_data.values[:, 1], 1, color=Qt.red, mode=mode, new_data=False)
-            self.flood.add_data(x_data, pressure_data.values[:, 2], 2, color=Qt.blue, mode=mode, new_data=False)
-            self.flood.add_data(x_data, pressure_data.values[:, 3], 3, color=Qt.darkGreen, mode=mode, new_data=False)
-            self.flood.add_data(x_data, pressure_data.values[:, 4], 4, color=Qt.magenta, mode=mode, new_data=False)
+            self.flood.add_data(x_data, pressure_data.values[:, iv[0]], 0, color=self.get_curve_color(0), mode=mode,
+                                new_data=False)
+            self.flood.add_data(x_data, pressure_data.values[:, iv[1]], 1, color=self.get_curve_color(1), mode=mode,
+                                new_data=False)
+            self.flood.add_data(x_data, pressure_data.values[:, iv[2]], 2, color=self.get_curve_color(2), mode=mode,
+                                new_data=False)
+            self.flood.add_data(x_data, pressure_data.values[:, iv[3]], 3, color=self.get_curve_color(3), mode=mode,
+                                new_data=False)
+            self.flood.add_data(x_data, pressure_data.values[:, iv[4]], 4, color=self.get_curve_color(4), mode=mode,
+                                new_data=False)
         except Exception as e:
             QMessageBox(parent=self, text=str(e)).exec_()
             return
@@ -1644,11 +1764,12 @@ class CoreFloodForm(QMainWindow):
         self.x_axis.setMax(0)
         self.y_axis.setMin(0)
         self.y_axis.setMax(0)
-        self.flood.add_data(x_data, pressure_data.values[:, 0], 0, color=Qt.black)
-        self.flood.add_data(x_data, pressure_data.values[:, 1], 1, color=Qt.red)
-        self.flood.add_data(x_data, pressure_data.values[:, 2], 2, color=Qt.blue)
-        self.flood.add_data(x_data, pressure_data.values[:, 3], 3, color=Qt.darkGreen)
-        self.flood.add_data(x_data, pressure_data.values[:, 4], 4, color=Qt.magenta)
+        iv = [self.flood.get_nn(i) for i in range(5)]
+        self.flood.add_data(x_data, pressure_data.values[:, iv[0]], 0, color=self.get_curve_color(0))
+        self.flood.add_data(x_data, pressure_data.values[:, iv[1]], 1, color=self.get_curve_color(1))
+        self.flood.add_data(x_data, pressure_data.values[:, iv[2]], 2, color=self.get_curve_color(2))
+        self.flood.add_data(x_data, pressure_data.values[:, iv[3]], 3, color=self.get_curve_color(3))
+        self.flood.add_data(x_data, pressure_data.values[:, iv[4]], 4, color=self.get_curve_color(4))
 
         self.file_path = pd_path
         self.x_max = self.x_axis.max()
@@ -1735,9 +1856,11 @@ class CoreFloodForm(QMainWindow):
     def re_add_lines(self):
 
         self.flow_mode()
+        print('exiting flow mode.')
         for t in self.flood.flow_rate.keys():
             self.add_v_line(t)
 
+        print('about to enter plateau mode.')
         self.plateau_mode()
         plateau_x = self.flood.plateau_x
         self.flood.plateau_x = [[], []]
@@ -1804,7 +1927,7 @@ class CoreFloodForm(QMainWindow):
         self.check_incomplete_plateau()
         self.x_axis.setMax(0.)
         # self.y_axis.setMin(self.y_min)
-        # self.y_axis.setMax(self.y_max)
+        # self.y_axis.setMax(self.y_max
         self.flood.set_x_data_view_time()
         self.zoom_mode()
         self.x_view = 'Time'
@@ -2066,7 +2189,7 @@ class CoreFloodForm(QMainWindow):
                                     num_str = ''
                                     num_str += chr(947) + u' = %.1f s-1' % shear
                                     if not np.isnan(mu):
-                                        num_str += u', ' + chr(956) + u' = %.1f cP' % mu
+                                        num_str += u', ' + chr(956) + u' = %.2f cP' % mu
                                     else:
                                         num_str += u', ' + chr(956) + u' = NaN cP'
 
@@ -2077,11 +2200,11 @@ class CoreFloodForm(QMainWindow):
                                         num_str += u', sec3 = %.2f psi' % (fl.plateau_sec3[index] - fl.used_offsets[3])
                                         num_str += u', sec4 = %.2f psi' % (fl.plateau_sec4[index] - fl.used_offsets[4])
                                     else:
-                                        num_str += u', whole = %.1f' % fl.plateau_whole_rf[index]
-                                        num_str += u', sec1 = %.1f' % fl.plateau_sec1_rf[index]
-                                        num_str += u', sec2 = %.1f' % fl.plateau_sec2_rf[index]
-                                        num_str += u', sec3 = %.1f' % fl.plateau_sec3_rf[index]
-                                        num_str += u', sec4 = %.1f' % fl.plateau_sec4_rf[index]
+                                        num_str += u', whole = %.2f' % fl.plateau_whole_rf[index]
+                                        num_str += u', sec1 = %.2f' % fl.plateau_sec1_rf[index]
+                                        num_str += u', sec2 = %.2f' % fl.plateau_sec2_rf[index]
+                                        num_str += u', sec3 = %.2f' % fl.plateau_sec3_rf[index]
+                                        num_str += u', sec4 = %.2f' % fl.plateau_sec4_rf[index]
 
                                     self.statusBar().showMessage(num_str)
 
