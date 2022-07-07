@@ -178,7 +178,11 @@ class ProjectManagerView(QDialog):
 
         icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
-        sf = 92. / QApplication.primaryScreen().physicalDotsPerInch()
+        sf = 300. / QApplication.primaryScreen().physicalDotsPerInchY()
+        orientation = QApplication.primaryScreen().primaryOrientation()
+        avail_size = QApplication.primaryScreen().availableSize()
+        physical_size = QApplication.primaryScreen().physicalSize()
+        print(orientation, avail_size, physical_size)
         self.sf = sf
         self.setFixedSize(int(sf * 900), int(sf * 700))
 

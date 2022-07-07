@@ -1,4 +1,4 @@
-
+import numpy as np
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QWidget, \
     QLineEdit, QDialog, QComboBox, QLabel, QGroupBox, QTabWidget, QListWidget, QGridLayout, QCheckBox, QMessageBox, \
     QTextEdit, QScrollArea
@@ -2063,18 +2063,19 @@ class SummaryViewer(QDialog):
 
         self.core_properties_label = QLabel(parent=self.scroll_widget, text='Core Properties')
         self.core_name_label = QLabel(parent=self.scroll_widget)
+        self.core_lithology_label = QLabel(parent=self.scroll_widget)
         self.core_diameter_label = QLabel(parent=self.scroll_widget)
         self.core_area_label = QLabel(parent=self.scroll_widget)
         self.core_length_label = QLabel(parent=self.scroll_widget)
+        self.core_bulk_volume_label = QLabel(parent=self.scroll_widget)
         self.pore_volume_label = QLabel(parent=self.scroll_widget)
         self.porosity_label = QLabel(parent=self.scroll_widget)
-        self.core_lithology_label = QLabel(parent=self.scroll_widget)
         self.core_mass_label = QLabel(parent=self.scroll_widget)
         self.floods_label = QLabel(parent=self.scroll_widget, text='Flood Info')
 
-        self.core_labels = [self.core_name_label, self.core_diameter_label, self.core_area_label,
-                            self.core_length_label, self.pore_volume_label, self.porosity_label,
-                            self.core_lithology_label, self.core_mass_label]
+        self.core_labels = [self.core_name_label, self.core_lithology_label, self.core_diameter_label,
+                            self.core_area_label, self.core_length_label, self.core_bulk_volume_label,
+                            self.pore_volume_label, self.porosity_label, self.core_mass_label]
 
         self.flood_labels = []
         self.plateau_labels = []
@@ -2113,18 +2114,21 @@ class SummaryViewer(QDialog):
 
         exp = self.experiment
         c = exp.core
+        a = c.my_area()
+        cl = c.my_length()
         cs = c.core_sections[0]
-        d = sqrt((4. / pi) * c.my_area())
+        d = sqrt((4. / pi) * a)
         porosity = exp.get_pv() / c.my_bulk_volume()
 
-        self.core_name_label.setText('Core name: {}'.format(c.name))
-        self.core_diameter_label.setText('Core diameter: {:.2f} cm, {:.3f} in'.format(d, d / 2.54))
-        self.core_area_label.setText('Core CS area: {:.2f} cm^2'.format(c.my_area()))
-        self.core_length_label.setText('Core length: {:.2f} cm, {:.3f} in'.format(c.my_length(), c.my_length() / 2.54))
-        self.pore_volume_label.setText('Pore volume: {:.1f} mL'.format(exp.get_pv()))
-        self.porosity_label.setText('Porosity: {:.2f}%'.format(100. * porosity))
+        self.core_name_label.setText('Core Name: {}'.format(c.name))
         self.core_lithology_label.setText('Lithology: {} ({} g/cc)'.format(cs.lithology, cs.densities[cs.lithology]))
-        self.core_mass_label.setText('Core mass: {:.1f} g'.format(exp.get_core_mass(0)))
+        self.core_diameter_label.setText('D'.rjust(9) + ': {:.2f} cm ({:.3f} in)'.format(d, d / 2.54))
+        self.core_area_label.setText('A'.rjust(9) + ': {:.2f} cm^2'.format(c.my_area()))
+        self.core_length_label.setText('L'.rjust(9) + ': {:.2f} cm ({:.3f} in)'.format(cl, cl / 2.54))
+        self.core_bulk_volume_label.setText('BV'.rjust(9) + ': {:.1f} cc'.format(c.my_bulk_volume()))
+        self.pore_volume_label.setText('PV'.rjust(9) + ': {:.1f} mL'.format(exp.get_pv()))
+        self.porosity_label.setText(chr(966).rjust(9) + ': {:.2f}%'.format(100. * porosity))
+        self.core_mass_label.setText('M'.rjust(9) + ': {:.1f} g'.format(exp.get_core_mass(0)))
 
         for label in self.flood_labels:
             self.lyt.removeWidget(label)
@@ -2134,9 +2138,15 @@ class SummaryViewer(QDialog):
             self.lyt.removeWidget(label)
             label.destroy()
 
+        perm_ref_flood = self.experiment.petro_parameters['perm'][2]
+        temp_perm = self.experiment.petro_parameters['perm'][0]
+        ref_perm = array([temp_perm for ii in range(5)])
+        if perm_ref_flood is not None:
+            ref_perm = perm_ref_flood.permeability
+
         sw0 = exp.get_initial_saturation()
         sw_final = 1.
-        row = 10
+        row = 11
 
         for i, fl in enumerate(exp.binned_floods()):
             label = QLabel(parent=self.scroll_widget)
@@ -2158,6 +2168,8 @@ class SummaryViewer(QDialog):
 
             row += 1
 
+            p_flow_rates, _ = fl.get_rates_and_plateaus(0)
+
             if fl.plateau_whole:
                 print(fl.plateau_x)
                 j = 0
@@ -2166,13 +2178,14 @@ class SummaryViewer(QDialog):
                                                                                  fl.plateau_sec4):
                     p_label = QLabel(parent=self.scroll_widget)
                     p_label.setFont(self.label_font)
+                    mu = fl.get_fluid_viscosity(j)
                     p_text = '    ' + \
-                             'W: ' + '{:.1f}'.format(plateau_w).ljust(6) + 'psi' \
-                             '  1: ' + '{:.1f}'.format(plateau_1).ljust(6) + 'psi' \
-                             '  2: ' + '{:.1f}'.format(plateau_2).ljust(6) + 'psi' \
-                             '  3: ' + '{:.1f}'.format(plateau_3).ljust(6) + 'psi' \
-                             '  4: ' + '{:.1f}'.format(plateau_4).ljust(6) + 'psi' \
-                             '  ' + '{:.2f}'.format(fl.get_fluid_viscosity(j)).rjust(7) + ' cP'
+                             'W: ' + '{:.1f}'.format(plateau_w).rjust(5) + ' psi' \
+                             '  1: ' + '{:.1f}'.format(plateau_1).rjust(5) + ' psi' \
+                             '  2: ' + '{:.1f}'.format(plateau_2).rjust(5) + ' psi' \
+                             '  3: ' + '{:.1f}'.format(plateau_3).rjust(5) + ' psi' \
+                             '  4: ' + '{:.1f}'.format(plateau_4).rjust(5) + ' psi' \
+                             + '  ' + chr(956) + ':' + '{:.2f}'.format(mu).rjust(8) + ' cP'
 
                     p_label.setText(p_text)
                     p_label.setStyleSheet('QLabel{background-color: yellow};')
@@ -2180,6 +2193,50 @@ class SummaryViewer(QDialog):
                     self.plateau_labels.append(p_label)
 
                     row += 1
+
+                    dpis = [plateau_w, plateau_1, plateau_2, plateau_3, plateau_4]
+                    clis = [cl, 0, 0, 0, 0]
+                    for k in range(4):
+                        if cl >= 7.62 * k:
+                            clis[k + 1] = 7.62
+                            continue
+                        clis[k + 1] = cl - sum(clis[1:k+1])
+                        break
+
+                    p_label = QLabel(parent=self.scroll_widget)
+                    p_label.setFont(self.flood_label_font)
+                    q = p_flow_rates[j]
+                    perm = [(245. * q * mu * cli) / (a * dpi) for cli, dpi in zip(clis, dpis)]
+                    ftperd = q * 60. * 24. * 12. / exp.get_pv() / (cl / 2.54)
+                    p_text = '    ' + \
+                             ' ' + '{:.1f}'.format(perm[0]).rjust(7) + ' mD ' \
+                             '   ' + '{:.1f}'.format(perm[1]).rjust(7) + ' mD ' \
+                             '   ' + '{:.1f}'.format(perm[2]).rjust(7) + ' mD ' \
+                             '   ' + '{:.1f}'.format(perm[3]).rjust(7) + ' mD ' \
+                             '   ' + '{:.1f}'.format(perm[4]).rjust(7) + ' mD ' \
+                             + '  Q:' + '{:.3f}'.format(q).rjust(8) + ' mL/min' + ' ({:.2f})'.format(ftperd).rjust(9) \
+                             + ' ft/d'
+
+                    p_label.setText(p_text)
+                    p_label.setStyleSheet('QLabel{background-color: yellow; color: red};')
+                    self.lyt.addWidget(p_label, row, 0, 1, 1)
+                    self.plateau_labels.append(p_label)
+
+                    row += 1
+
+                    p_label = QLabel(parent=self.scroll_widget)
+                    p_label.setFont(self.flood_label_font)
+                    p_text = '        '
+                    for permi, ref_permi in zip(perm, ref_perm):
+                        p_text += '{:.2f}'.format(permi / ref_permi).ljust(14)
+
+                    p_label.setText(p_text)
+                    p_label.setStyleSheet('QLabel{background-color: yellow; color: red};')
+                    self.lyt.addWidget(p_label, row, 0, 1, 1)
+                    self.plateau_labels.append(p_label)
+
+                    row += 1
+
                     j += 1
 
             label = QLabel(parent=self.scroll_widget)

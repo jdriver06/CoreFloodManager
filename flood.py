@@ -207,7 +207,7 @@ class CoreFlood:
             plateaus = self.plateau_whole
 
         if len(plateaus) < 1:
-            return
+            return [], []
 
         break_points = list(self.flow_rate.keys())
         break_points.sort()

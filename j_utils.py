@@ -3,7 +3,7 @@ from PyQt5.Qt import QPolygonF, QFileDialog, pyqtSignal, Qt
 from PyQt5.QtWidgets import QMessageBox, QListWidget, QListWidgetItem, QVBoxLayout, QHBoxLayout, \
     QWidget, QGroupBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem
 from PyQt5.QtGui import QMouseEvent, QKeyEvent
-from PyQt5.QtSql import QSqlQuery
+# from PyQt5.QtSql import QSqlQuery
 import numpy as np
 from enum import Enum, auto
 
@@ -93,28 +93,28 @@ def file_open_dlg(direct, filter, save=False):
     return file_name
 
 
-class JQSqlQuery(QSqlQuery):
-
-    def __init__(self, **kwargs):
-        super(JQSqlQuery, self).__init__(**kwargs)
-
-    def select(self, table_name: str, columns: list, execute: bool):
-
-        query_string = 'SELECT '
-
-        for i, column in enumerate(columns):
-            query_string += column
-            if i < len(columns) - 1:
-                query_string += ', '
-            else:
-                query_string += ' '
-
-        query_string += 'FROM ' + table_name
-
-        if execute:
-            self.exec_(query_string)
-        else:
-            self.prepare(query_string)
+# class JQSqlQuery(QSqlQuery):
+#
+#     def __init__(self, **kwargs):
+#         super(JQSqlQuery, self).__init__(**kwargs)
+#
+#     def select(self, table_name: str, columns: list, execute: bool):
+#
+#         query_string = 'SELECT '
+#
+#         for i, column in enumerate(columns):
+#             query_string += column
+#             if i < len(columns) - 1:
+#                 query_string += ', '
+#             else:
+#                 query_string += ' '
+#
+#         query_string += 'FROM ' + table_name
+#
+#         if execute:
+#             self.exec_(query_string)
+#         else:
+#             self.prepare(query_string)
 
 
 class SignalList:
