@@ -404,6 +404,7 @@ class Oil:
         self.view_class = OilTool
 
         self.api_gravity = nan
+        self.ift = nan
         self.rho_m = nan
         self.t_m = nan
         self.gor = nan
@@ -510,6 +511,9 @@ class OilTool(QDialog):
         api_label = QLabel(parent=self, text=u'API gravity [' + chr(176) + u']:')
         api_edit = QLineEdit(parent=self)
         api_edit.editingFinished.connect(self.api_edited)
+        ift_label = QLabel(parent=self, text='IFT [dynes/cm]:')
+        ift_edit = QLineEdit(parent=self)
+        ift_edit.editingFinished.connect(self.ift_edited)
         m_label = QLabel(parent=self, text='Measured Density at Temperature')
         rho_label = QLabel(parent=self, text=chr(961) + u' [g/cc]:')
         rho_edit = QLineEdit(parent=self)
@@ -546,13 +550,15 @@ class OilTool(QDialog):
 
         lyt.addWidget(api_label, 0, 0, 1, 1)
         lyt.addWidget(api_edit, 0, 1, 1, 1)
-        lyt.addWidget(m_label, 1, 0, 1, 2)
-        lyt.addWidget(rho_label, 2, 0, 1, 1)
-        lyt.addWidget(rho_edit, 2, 1, 1, 1)
-        lyt.addWidget(t_label, 3, 0, 1, 1)
-        lyt.addWidget(t_edit, 3, 1, 1, 1)
-        lyt.addWidget(alpha_label, 4, 0, 1, 2)
-        lyt.addWidget(self.show_density_button, 5, 0, 1, 2)
+        lyt.addWidget(ift_label, 1, 0, 1, 1)
+        lyt.addWidget(ift_edit, 1, 1, 1, 1)
+        lyt.addWidget(m_label, 2, 0, 1, 2)
+        lyt.addWidget(rho_label, 3, 0, 1, 1)
+        lyt.addWidget(rho_edit, 3, 1, 1, 1)
+        lyt.addWidget(t_label, 4, 0, 1, 1)
+        lyt.addWidget(t_edit, 4, 1, 1, 1)
+        lyt.addWidget(alpha_label, 5, 0, 1, 2)
+        lyt.addWidget(self.show_density_button, 6, 0, 1, 2)
         lyt.addWidget(gor_label, 0, 2, 1, 1)
         lyt.addWidget(gor_edit, 0, 3, 1, 1)
         lyt.addWidget(bp_label, 1, 2, 1, 1)
@@ -561,10 +567,12 @@ class OilTool(QDialog):
         lyt.addWidget(gravity_edit, 2, 3, 1, 1)
         lyt.addWidget(self.gas_composition_button, 3, 2, 2, 1)
         lyt.addWidget(self.gas_composition_text, 3, 3, 2, 1)
-        lyt.addWidget(self.live_density_button, 5, 2, 1, 2)
+        lyt.addWidget(self.live_density_button, 6, 2, 1, 2)
 
         self.api_edit = api_edit
         self.sync_edit(api_edit, oil.api_gravity)
+        self.ift_edit = ift_edit
+        self.sync_edit(ift_edit, oil.ift)
         self.rho_edit = rho_edit
         self.sync_edit(rho_edit, oil.rho_m)
         self.t_edit = t_edit
@@ -610,6 +618,22 @@ class OilTool(QDialog):
 
         except ValueError:
             self.sync_edit(self.api_edit, self.oil.api_gravity)
+
+    def ift_edited(self):
+
+        txt = self.ift_edit.text()
+
+        try:
+            val = float(txt)
+            if val <= 0.:
+                raise ValueError
+
+            self.oil.ift = val
+            self.sync_edit(self.ift_edit, val)
+            self.editValueChanged.emit()
+
+        except ValueError:
+            self.sync_edit(self.ift_edit, self.oil.ift)
 
     def rho_edited(self):
 
@@ -788,6 +812,7 @@ class OilSample:
     def __init__(self, name: str, ref_oils: list):
         self.name = name
         self.ref_objects = ref_oils
+        self.ift = nan
         self.project_manager_list = None
         self.view_class = OilSampleTool
         self.rheologies_list = utils.SignalListManager()
@@ -796,6 +821,16 @@ class OilSample:
         self.additives = []
         self.concentrations = []
         self.composition_set = False
+
+    def get_ift(self) -> float:
+
+        if not isnan(self.ift):
+            return self.ift
+
+        if isinstance(self.ref_objects[0], Oil):
+            return self.ref_objects[0].ift
+
+        return nan
 
 
 class Diluent:
@@ -832,10 +867,13 @@ class OilSampleTool(QDialog):
 
         self.show()
         self.composition_view = None
+        self.ift_view = None
         self.view_composition()
 
         if not oil_sample.composition_set:
             self.list_widget.setEnabled(False)
+        elif len(oil_sample.additives) > 0:
+            self.view_ift()
 
     def view_composition(self):
 
@@ -875,9 +913,65 @@ class OilSampleTool(QDialog):
             self.composition_view.remove_button.setEnabled(True)
             self.composition_view.submit_button.setEnabled(True)
 
+    def view_ift(self):
+
+        if self.ift_view is None:
+            self.ift_view = OilSampleIFTTool(self)
+            self.ift_view.show()
+
     def enable_rheology_list(self):
 
         self.list_widget.setEnabled(True)
+
+
+class OilSampleIFTTool(QDialog):
+
+    def __init__(self, parent: OilSampleTool):
+        super(OilSampleIFTTool, self).__init__(parent=parent)
+        self.parent = parent
+        self.sf = parent.sf
+        self.setWindowTitle('{} IFT Tool'.format(parent.oil_sample.name))
+        self.setFixedSize(int(self.sf * 250), int(self.sf * 50))
+
+        lyt = QHBoxLayout()
+        self.setLayout(lyt)
+
+        ift_label = QLabel(parent=self, text='IFT [dynes/cm]:')
+        self.ift_edit = QLineEdit(parent=self)
+        self.ift_edit.editingFinished.connect(self.ift_edited)
+
+        lyt.addWidget(ift_label)
+        lyt.addWidget(self.ift_edit)
+
+        self.load_edit()
+
+    def load_edit(self):
+
+        self.ift_edit.setText('')
+        ift = self.parent.oil_sample.ift
+        if not isnan(ift):
+            self.ift_edit.setText(str(ift))
+
+    def ift_edited(self):
+
+        txt = self.ift_edit.text()
+
+        try:
+            val = float(txt)
+            if val < 0.:
+                raise ValueError
+
+            self.parent.oil_sample.ift = val
+
+        except ValueError:
+            self.load_edit()
+
+    def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+
+        try:
+            self.parent.ift_view = None
+        except Exception as e:
+            print(e)
 
 
 def oil_sample_rheology_view_wrapper(parent, *args):
@@ -1258,7 +1352,7 @@ class BrineInjectionFluidView(SpecificFluidView):
 
 class OilInjectionFluidView(SpecificFluidView):
 
-    def __init__(self, parent, oil_if: InjectionFluid=None):
+    def __init__(self, parent, oil_if: InjectionFluid = None):
         super(OilInjectionFluidView, self).__init__(parent=parent, injection_fluid=oil_if)
 
         if isinstance(parent, OilSampleTool):

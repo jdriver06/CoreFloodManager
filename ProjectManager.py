@@ -20,7 +20,7 @@ from filelock import FileLock
 from copy import deepcopy
 
 
-__version__ = '0.9.8'
+__version__ = '0.10.0'
 
 # Patched issue with extra nan entry in oil if temps by discarding in polymer solution brine_if.
 
@@ -48,7 +48,8 @@ version_list = ['0.1.0',
                 '0.9.4',
                 '0.9.5',
                 '0.9.6',
-                '0.9.7']
+                '0.9.7',
+                '0.10.0']
 
 
 class ProjectManager:
@@ -178,7 +179,7 @@ class ProjectManagerView(QDialog):
 
         icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
-        sf = 300. / QApplication.primaryScreen().physicalDotsPerInchY()
+        sf = 92. / QApplication.primaryScreen().physicalDotsPerInchY()
         orientation = QApplication.primaryScreen().primaryOrientation()
         avail_size = QApplication.primaryScreen().availableSize()
         physical_size = QApplication.primaryScreen().physicalSize()
@@ -344,6 +345,7 @@ class ProjectManagerView(QDialog):
         if not hasattr(self.project_manager, 'version'):
             self.project_manager.version = '0.1.0'
         ind = version_list.index(str(self.project_manager.version))
+        print(version_list)
         for i in range(ind, len(version_list) - 1):
             self.version_increment(i)
 
@@ -714,7 +716,18 @@ class ProjectManagerView(QDialog):
             pass
 
         if version_list[i] == '0.9.7':
-            pass
+
+            print('upgrading to version 0.10.0')
+
+            for oil in self.oil_list.signal_lists[0].objects:
+                if not hasattr(oil, 'ift'):
+                    oil.ift = np.nan
+            for oil_sample in self.oil_list.signal_lists[1].objects:
+                if not hasattr(oil_sample, 'ift'):
+                    oil_sample.ift = np.nan
+            for expt in self.flood_experiment_list.signal_lists[0].objects:
+                if not hasattr(expt, 'ift_dict'):
+                    expt.ift_dict = dict()
 
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):

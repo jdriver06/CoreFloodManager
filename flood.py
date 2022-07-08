@@ -161,6 +161,50 @@ class CoreFlood:
 
         return background_color
 
+    @staticmethod
+    def get_reversed_offsets(old_offsets: np.array) -> np.array:
+
+        new_offsets = np.zeros(5)
+        new_offsets[0] = old_offsets[0]
+        new_offsets[1] = old_offsets[4]
+        new_offsets[2] = old_offsets[3]
+        new_offsets[3] = old_offsets[2]
+        new_offsets[4] = old_offsets[1]
+
+        return new_offsets
+
+    def set_reverse_flow(self, reversed: bool):
+
+        if self.reverse_flow == reversed:
+            return
+
+        self.reverse_flow = reversed
+        self.manual_offsets = self.get_reversed_offsets(self.manual_offsets)
+        self.offsets = self.get_reversed_offsets(self.offsets)
+
+        if self.offset_source_flood == self:
+
+            self.used_offsets = self.get_reversed_offsets(self.used_offsets)
+
+            for fl in self.offset_referencer_floods:
+                fl.reload_offsets_from_source()
+                fl.update_plateaus()
+
+            return
+
+        self.reload_offsets_from_source()
+
+    def reload_offsets_from_source(self):
+
+        if self.offset_source_flood == self:
+            return
+
+        if self.reverse_flow == self.offset_source_flood.reverse_flow:
+            self.used_offsets = self.offset_source_flood.used_offsets
+            return
+
+        self.used_offsets = self.get_reversed_offsets(self.offset_source_flood.used_offsets)
+
     def get_fluids_list(self) -> list:
 
         return [self.fluid]

@@ -117,6 +117,7 @@ class FloodExperiment:
         self.multi_floods_list = utils.SignalListManager()
         self.multi_floods_list.add_signal_list()
         self.multi_floods_list.signal_lists[0].set_ref_lists([self.floods_list.signal_lists[0]])
+        self.ift_dict = dict()
 
     def find_multiflood(self, f: flood.CoreFlood):
         """ This function returns the multi-flood claiming flood f if it exists, otherwise, None is returned. """
@@ -176,6 +177,39 @@ class FloodExperiment:
                 break
 
         return oil_if
+
+    def get_ift(self, f: flood.CoreFlood, flu: fluid.InjectionFluid = None) -> float:
+
+        if not isinstance(f, flood.MultiCoreFlood):
+            flu = f.fluid
+
+        if isinstance(flu.specific_fluid, fluid.OilInjectionFluid):
+            return np.nan
+
+        oil_if = self.get_most_recent_oil_if(f)
+
+        if oil_if is None:
+            return np.nan
+
+        if (oil_if, flu) in self.ift_dict.keys():
+            return self.ift_dict[(oil_if, flu)]
+
+        if isinstance(f, flood.MultiCoreFlood):
+            fluids_list = f.get_fluids_list()
+            min_ift = np.nan
+            for fluidi in fluids_list:
+                if fluidi == flu:
+                    continue
+                ifti = np.nan
+                if (oil_if, fluidi) in self.ift_dict.keys():
+                    ifti = self.ift_dict[(oil_if, fluidi)]
+                if isnan(min_ift) or ifti < min_ift:
+                    min_ift = ifti
+
+            if not isnan(min_ift):
+                return min_ift
+
+        return oil_if.specific_fluid.oil_sample.get_ift()
 
     def get_pv(self) -> float:
 
@@ -1457,7 +1491,8 @@ class FloodIcon(QFrame):
 
     def rev_flow(self):
 
-        self.flood.reverse_flow = self.rev_checkbox.isChecked()
+        self.flood.set_reverse_flow(self.rev_checkbox.isChecked())
+
         j = self.fe_view.experiment.floods.index(self.flood)
         if self.fe_view.flood_forms[j] is not None:
             self.fe_view.flood_forms[j].update_from_source()
@@ -1732,6 +1767,14 @@ class PermeabilityTab(FloodListTab):
 
         if floods[j].offset_source_flood == floods[i]:
             self.list_item_select()
+            msg = 'Cannot have circular reference.'
+            QMessageBox(parent=self, text=msg)
+            return
+
+        if floods[j].offset_source_flood != floods[j] and floods[j] != floods[i]:
+            self.list_item_select()
+            msg = 'Cannot set offset source to another flood with an offset source that is not itself.'
+            QMessageBox(parent=self, text=msg)
             return
 
         floods[i].used_offsets = floods[j].used_offsets
@@ -1741,6 +1784,11 @@ class PermeabilityTab(FloodListTab):
 
         floods[i].offset_source_flood = floods[j]
         floods[j].offset_referencer_floods.append(floods[i])
+
+        try:
+            floods[i].reload_offsets_from_source()
+        except Exception as e:
+            QMessageBox(parent=self, text=str(e)).exec_()
 
         cff = self.parent().parent().parent().parent().flood_forms[i]
         if cff is not None:
@@ -1753,6 +1801,10 @@ class PermeabilityTab(FloodListTab):
         j = self.permeability_combobox.currentIndex()
 
         if floods[j].permeability_source_flood == floods[i]:
+            self.list_item_select()
+            return
+
+        if floods[j].permeability_source_flood != floods[j]:
             self.list_item_select()
             return
 
@@ -1999,6 +2051,126 @@ class ExperimentNotesTab(QWidget):
             expt.notes = self.notes_edit.toPlainText()
 
 
+class IFTTab(QWidget):
+
+    def __init__(self, parent):
+        super(IFTTab, self).__init__(parent=parent)
+
+        lyt = QGridLayout()
+        self.setLayout(lyt)
+
+        self.oil_if_listbox = QListWidget(parent=self)
+        self.brine_if_listbox = QListWidget(parent=self)
+        ift_label = QLabel(parent=self, text='IFT [dynes/cm]:')
+        self.ift_edit = QLineEdit(parent=self)
+        self.ift_edit.setEnabled(False)
+        self.ift_edit.editingFinished.connect(self.ift_edited)
+
+        lyt.addWidget(self.oil_if_listbox, 0, 0, 1, 2)
+        lyt.addWidget(self.brine_if_listbox, 1, 0, 1, 2)
+        lyt.addWidget(ift_label, 2, 0, 1, 1)
+        lyt.addWidget(self.ift_edit, 2, 1, 1, 1)
+
+        self.oil_if_listbox.currentRowChanged.connect(self.check_enable_ift_edit)
+        self.brine_if_listbox.currentRowChanged.connect(self.check_enable_ift_edit)
+
+        self.oil_if_list = list()
+        self.brine_if_list = list()
+        self.experiment = self.parent().parent().experiment
+
+        self.load_injection_fluids()
+
+    def load_injection_fluids(self):
+
+        self.oil_if_listbox.clear()
+        self.brine_if_listbox.clear()
+
+        expt = self.experiment
+
+        oil_if_list = list()
+        brine_if_list = list()
+
+        self.oil_if_list = list()
+        self.brine_if_list = list()
+
+        for inj_fl in expt.injection_fluids_list.signal_lists[0].objects:
+            if isinstance(inj_fl.specific_fluid, fluid.OilInjectionFluid):
+                oil_if_list.append(inj_fl.name)
+                self.oil_if_list.append(inj_fl)
+                continue
+            if isinstance(inj_fl.specific_fluid, fluid.BrineInjectionFluid):
+                brine_if_list.append(inj_fl.name)
+                self.brine_if_list.append(inj_fl)
+                continue
+
+        self.oil_if_listbox.addItems(oil_if_list)
+        self.brine_if_listbox.addItems(brine_if_list)
+
+    def check_enable_ift_edit(self, _):
+
+        enable = False
+        if self.oil_if_listbox.currentIndex().row() > -1 and self.brine_if_listbox.currentIndex().row() > -1:
+            enable = True
+
+        self.ift_edit.setEnabled(enable)
+
+        if enable:
+            self.load_ift()
+
+    def load_ift(self):
+
+        self.ift_edit.setText('')
+
+        oi = self.oil_if_listbox.currentIndex().row()
+        bi = self.brine_if_listbox.currentIndex().row()
+        oif = self.oil_if_list[oi]
+        bif = self.brine_if_list[bi]
+
+        expt = self.experiment
+
+        if (oif, bif) in expt.ift_dict.keys():
+            self.ift_edit.setText('{:.3f}'.format(expt.ift_dict[(oif, bif)]))
+
+    def set_ift(self, val: float):
+
+        oi = self.oil_if_listbox.currentIndex().row()
+        bi = self.brine_if_listbox.currentIndex().row()
+        oif = self.oil_if_list[oi]
+        bif = self.brine_if_list[bi]
+
+        expt = self.experiment
+        expt.ift_dict[(oif, bif)] = val
+
+    def remove_ift(self):
+
+        oi = self.oil_if_listbox.currentIndex().row()
+        bi = self.brine_if_listbox.currentIndex().row()
+        oif = self.oil_if_list[oi]
+        bif = self.brine_if_list[bi]
+
+        expt = self.experiment
+        expt.ift_dict.pop((oif, bif))
+
+    def ift_edited(self):
+
+        txt = self.ift_edit.text()
+
+        if not txt:
+            self.remove_ift()
+            return
+
+        try:
+            val = float(txt)
+            if val < 0.:
+                raise ValueError
+
+            self.set_ift(val)
+
+        except ValueError:
+
+            self.load_ift()
+
+
 class PetrophysicsView(QDialog):
 
     def __init__(self, experiment: FloodExperiment, parent: FloodExperimentView, sf: float=1.):
@@ -2011,12 +2183,14 @@ class PetrophysicsView(QDialog):
         self.tab_widget = QTabWidget(parent=self)
         self.estimates_tab = EstimatesTab(self)
         self.permeability_tab = PermeabilityTab(self)
+        self.ift_tab = IFTTab(self)
         # self.porosity_tab = PorosityTab(self)
         self.notes_tab_widget = QTabWidget(parent=self.tab_widget)
         self.experiment_notes_tab = ExperimentNotesTab(self.notes_tab_widget, sf)
         self.notes_tab = NotesTab(self.notes_tab_widget)
         self.tab_widget.addTab(self.estimates_tab, 'Est.')
         self.tab_widget.addTab(self.permeability_tab, chr(954))
+        self.tab_widget.addTab(self.ift_tab, 'IFT')
         # self.tab_widget.addTab(self.porosity_tab, chr(966))
         # self.tab_widget.addTab(self.notes_tab, 'Notes')
         self.notes_tab_widget.addTab(self.experiment_notes_tab, 'Experiment')
@@ -2145,6 +2319,8 @@ class SummaryViewer(QDialog):
             ref_perm = perm_ref_flood.permeability
 
         sw0 = exp.get_initial_saturation()
+        rho_o = np.nan
+        rho_w = np.nan
         sw_final = 1.
         row = 11
 
@@ -2157,7 +2333,8 @@ class SummaryViewer(QDialog):
                 sw_init = sw_final
                 sw_final = exp.get_flood_saturation(fl)
 
-            label.setText('{}, Sw {:.3f} -> {:.3f}'.format(fl.name, sw_init, sw_final))
+            flood_text = '{}, T = {:.1f}' + chr(176) + 'C, Sw {:.3f} -> {:.3f}'
+            label.setText(flood_text.format(fl.name, fl.temperature, sw_init, sw_final))
             if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid) or fl.get_background_color() == 'black':
                 label.setStyleSheet('QLabel{color: white; background-color: ' + fl.get_background_color() + '};')
             else:
@@ -2169,28 +2346,38 @@ class SummaryViewer(QDialog):
             row += 1
 
             p_flow_rates, _ = fl.get_rates_and_plateaus(0)
+            p_fluids = fl.get_plateau_fluids([])
 
             if fl.plateau_whole:
-                print(fl.plateau_x)
+
                 j = 0
                 for plateau_w, plateau_1, plateau_2, plateau_3, plateau_4 in zip(fl.plateau_whole, fl.plateau_sec1,
                                                                                  fl.plateau_sec2, fl.plateau_sec3,
                                                                                  fl.plateau_sec4):
                     p_label = QLabel(parent=self.scroll_widget)
                     p_label.setFont(self.label_font)
+                    q = p_flow_rates[j]
                     mu = fl.get_fluid_viscosity(j)
                     p_text = '    ' + \
                              'W: ' + '{:.1f}'.format(plateau_w).rjust(5) + ' psi' \
                              '  1: ' + '{:.1f}'.format(plateau_1).rjust(5) + ' psi' \
                              '  2: ' + '{:.1f}'.format(plateau_2).rjust(5) + ' psi' \
                              '  3: ' + '{:.1f}'.format(plateau_3).rjust(5) + ' psi' \
-                             '  4: ' + '{:.1f}'.format(plateau_4).rjust(5) + ' psi' \
-                             + '  ' + chr(956) + ':' + '{:.2f}'.format(mu).rjust(8) + ' cP'
+                             '  4: ' + '{:.1f}'.format(plateau_4).rjust(5) + ' psi'
 
                     p_label.setText(p_text)
                     p_label.setStyleSheet('QLabel{background-color: yellow};')
                     self.lyt.addWidget(p_label, row, 0, 1, 1)
                     self.plateau_labels.append(p_label)
+
+                    p_label_right = QLabel(parent=self.scroll_widget)
+                    p_label_right.setStyleSheet('QLabel{background-color: yellow};')
+                    p_label_right.setFont(self.flood_label_font)
+                    p_text_right = '  Q:  {:.3f} mL/min  |  '.format(q) + chr(956) + ':' + \
+                                   '{:.2f} cP'.format(mu).rjust(11)
+                    p_label_right.setText(p_text_right)
+                    self.lyt.addWidget(p_label_right, row, 1, 1, 1)
+                    self.plateau_labels.append(p_label_right)
 
                     row += 1
 
@@ -2205,7 +2392,6 @@ class SummaryViewer(QDialog):
 
                     p_label = QLabel(parent=self.scroll_widget)
                     p_label.setFont(self.flood_label_font)
-                    q = p_flow_rates[j]
                     perm = [(245. * q * mu * cli) / (a * dpi) for cli, dpi in zip(clis, dpis)]
                     ftperd = q * 60. * 24. * 12. / exp.get_pv() / (cl / 2.54)
                     p_text = '    ' + \
@@ -2213,20 +2399,32 @@ class SummaryViewer(QDialog):
                              '   ' + '{:.1f}'.format(perm[1]).rjust(7) + ' mD ' \
                              '   ' + '{:.1f}'.format(perm[2]).rjust(7) + ' mD ' \
                              '   ' + '{:.1f}'.format(perm[3]).rjust(7) + ' mD ' \
-                             '   ' + '{:.1f}'.format(perm[4]).rjust(7) + ' mD ' \
-                             + '  Q:' + '{:.3f}'.format(q).rjust(8) + ' mL/min' + ' ({:.2f})'.format(ftperd).rjust(9) \
-                             + ' ft/d'
+                             '   ' + '{:.1f}'.format(perm[4]).rjust(7) + ' mD '
 
                     p_label.setText(p_text)
                     p_label.setStyleSheet('QLabel{background-color: yellow; color: red};')
                     self.lyt.addWidget(p_label, row, 0, 1, 1)
                     self.plateau_labels.append(p_label)
 
+                    p_label_right = QLabel(parent=self.scroll_widget)
+                    p_label_right.setStyleSheet('QLabel{background-color: yellow};')
+                    p_label_right.setFont(self.flood_label_font)
+                    p_text_right = '      {:.2f} ft/d  '.format(ftperd)
+                    p_label_right.setText(p_text_right)
+                    self.lyt.addWidget(p_label_right, row, 1, 1, 1)
+                    self.plateau_labels.append(p_label_right)
+
                     row += 1
 
                     p_label = QLabel(parent=self.scroll_widget)
                     p_label.setFont(self.flood_label_font)
-                    p_text = '        '
+                    if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
+                        p_text = '  kro:  '
+                    elif fl.fluid.get_fluid_type() == fluid.FluidType.POLYMER_SOLUTION:
+                        p_text = '  krp:  '
+                    else:
+                        p_text = '  krw:  '
+
                     for permi, ref_permi in zip(perm, ref_perm):
                         p_text += '{:.2f}'.format(permi / ref_permi).ljust(14)
 
@@ -2234,6 +2432,35 @@ class SummaryViewer(QDialog):
                     p_label.setStyleSheet('QLabel{background-color: yellow; color: red};')
                     self.lyt.addWidget(p_label, row, 0, 1, 1)
                     self.plateau_labels.append(p_label)
+
+                    if fl.n_phases < 2 or isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
+                        row += 1
+                        j += 1
+                        continue
+
+                    ift = exp.get_ift(fl, p_fluids[j])
+
+                    nc = mu * (ftperd * porosity * 12. * 2.54 / 24. / 60. / 60.) / ift
+
+                    if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
+                        rho_o = fl.fluid.specific_fluid.get_density(fl.temperature)
+
+                    if isinstance(fl.fluid.specific_fluid, fluid.BrineInjectionFluid):
+                        rho_w = fl.fluid.specific_fluid.get_density(fl.temperature)
+
+                    nb = -980 * (rho_o - rho_w) * perm[0] * 9.869e-12 / ift
+
+                    trapping_n = nc
+                    if not np.isnan(nb):
+                        trapping_n += nb
+
+                    p_label_right = QLabel(parent=self.scroll_widget)
+                    p_label_right.setStyleSheet('QLabel{background-color: yellow};')
+                    p_label_right.setFont(self.flood_label_font)
+                    p_text_right = '  NT: {:.2E} (IFT = {:.1E} dynes/cm)'.format(trapping_n, ift)
+                    p_label_right.setText(p_text_right)
+                    self.lyt.addWidget(p_label_right, row, 1, 1, 1)
+                    self.plateau_labels.append(p_label_right)
 
                     row += 1
 
