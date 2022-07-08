@@ -20,7 +20,7 @@ from filelock import FileLock
 from copy import deepcopy
 
 
-__version__ = '0.10.0'
+__version__ = '0.11.0'
 
 # Patched issue with extra nan entry in oil if temps by discarding in polymer solution brine_if.
 
@@ -49,7 +49,8 @@ version_list = ['0.1.0',
                 '0.9.5',
                 '0.9.6',
                 '0.9.7',
-                '0.10.0']
+                '0.10.0',
+                '0.11.0']
 
 
 class ProjectManager:
@@ -717,8 +718,6 @@ class ProjectManagerView(QDialog):
 
         if version_list[i] == '0.9.7':
 
-            print('upgrading to version 0.10.0')
-
             for oil in self.oil_list.signal_lists[0].objects:
                 if not hasattr(oil, 'ift'):
                     oil.ift = np.nan
@@ -728,6 +727,12 @@ class ProjectManagerView(QDialog):
             for expt in self.flood_experiment_list.signal_lists[0].objects:
                 if not hasattr(expt, 'ift_dict'):
                     expt.ift_dict = dict()
+
+        if version_list[i] == '0.10.0':
+
+            for brine in self.brine_list.signal_lists[0].objects:
+                if not hasattr(brine, 'add_non_salt_composition'):
+                    brine.add_non_salt_composition = {"MEA": 0.}
 
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):

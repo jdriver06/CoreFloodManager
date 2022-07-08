@@ -2212,7 +2212,7 @@ class SummaryViewer(QDialog):
         self.sf = parent.sf
         self.experiment = parent.experiment
 
-        self.resize(int(800 * self.sf), int(500 * self.sf))
+        self.resize(int(1100 * self.sf), int(600 * self.sf))
         # self.setFixedWidth(int(800 * self.sf))
         # self.setFixedHeight(int(400 * self.sf))
         self.setWindowTitle('Experiment Summary: {}'.format(self.experiment.name))
@@ -2306,11 +2306,11 @@ class SummaryViewer(QDialog):
 
         for label in self.flood_labels:
             self.lyt.removeWidget(label)
-            label.destroy()
+            label.close()
 
         for label in self.plateau_labels:
             self.lyt.removeWidget(label)
-            label.destroy()
+            label.close()
 
         perm_ref_flood = self.experiment.petro_parameters['perm'][2]
         temp_perm = self.experiment.petro_parameters['perm'][0]
@@ -2349,6 +2349,10 @@ class SummaryViewer(QDialog):
             p_fluids = fl.get_plateau_fluids([])
 
             if fl.plateau_whole:
+
+                use_rf = False
+                if len(fl.plateau_whole_rf) == len(fl.plateau_whole):
+                    use_rf = True
 
                 j = 0
                 for plateau_w, plateau_1, plateau_2, plateau_3, plateau_4 in zip(fl.plateau_whole, fl.plateau_sec1,
@@ -2433,6 +2437,12 @@ class SummaryViewer(QDialog):
                     self.lyt.addWidget(p_label, row, 0, 1, 1)
                     self.plateau_labels.append(p_label)
 
+                    if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
+                        rho_o = fl.fluid.specific_fluid.get_density(fl.temperature)
+
+                    if isinstance(fl.fluid.specific_fluid, fluid.BrineInjectionFluid):
+                        rho_w = fl.fluid.specific_fluid.get_density(fl.temperature)
+
                     if fl.n_phases < 2 or isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
                         row += 1
                         j += 1
@@ -2442,17 +2452,14 @@ class SummaryViewer(QDialog):
 
                     nc = mu * (ftperd * porosity * 12. * 2.54 / 24. / 60. / 60.) / ift
 
-                    if isinstance(fl.fluid.specific_fluid, fluid.OilInjectionFluid):
-                        rho_o = fl.fluid.specific_fluid.get_density(fl.temperature)
-
-                    if isinstance(fl.fluid.specific_fluid, fluid.BrineInjectionFluid):
-                        rho_w = fl.fluid.specific_fluid.get_density(fl.temperature)
-
-                    nb = -980 * (rho_o - rho_w) * perm[0] * 9.869e-12 / ift
+                    nb = -980 * (rho_o - rho_w) * ref_perm[0] * 9.869e-12 / ift
 
                     trapping_n = nc
                     if not np.isnan(nb):
-                        trapping_n += nb
+                        if not fl.reverse_flow:
+                            trapping_n += nb
+                        else:
+                            trapping_n -= nb
 
                     p_label_right = QLabel(parent=self.scroll_widget)
                     p_label_right.setStyleSheet('QLabel{background-color: yellow};')
@@ -2461,6 +2468,26 @@ class SummaryViewer(QDialog):
                     p_label_right.setText(p_text_right)
                     self.lyt.addWidget(p_label_right, row, 1, 1, 1)
                     self.plateau_labels.append(p_label_right)
+
+                    row += 1
+
+                    if not use_rf:
+                        j += 1
+                        continue
+
+                    p_label = QLabel(parent=self.scroll_widget)
+                    p_label.setFont(self.flood_label_font)
+                    p_text = '   RF:  '
+                    rfs = [fl.plateau_whole_rf[j], fl.plateau_sec1_rf[j], fl.plateau_sec2_rf[j],
+                           fl.plateau_sec3_rf[j], fl.plateau_sec4_rf[j]]
+
+                    for rf in rfs:
+                        p_text += '{:.2f}'.format(rf).ljust(14)
+
+                    p_label.setText(p_text)
+                    p_label.setStyleSheet('QLabel{background-color: yellow; color: red};')
+                    self.lyt.addWidget(p_label, row, 0, 1, 1)
+                    self.plateau_labels.append(p_label)
 
                     row += 1
 

@@ -8,7 +8,7 @@ import shutil
 from time import sleep
 import db_tools
 
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 
 
 def is_version_greater(v1: str, v2: str) -> bool:
@@ -62,6 +62,7 @@ class UpdateWorker(QObject):
 
         path = self.u_or_q + ':\\UEORLAB1\\Python Files\\' + self.gui + '\\'
         full_upgrade_path = [path + self.gui + '_v' + up.replace('.', '-') for up in self.upgrade_path]
+
         cwd = getcwd()
         current_files_and_directories = listdir(cwd)
 
@@ -168,7 +169,13 @@ class GUI_Launcher(QMainWindow):
             if result.find(self.gui + '_v') == -1 or result.find('.manifest') != -1:
                 continue
 
-            if isfile(my_dir + '\\' + result) and result > exe:
+            result_version = result.split('v')[-1].split('.')[0].replace('-', '.')
+            if not exe:
+                exe_version = '0.0.0'
+            else:
+                exe_version = exe.split('v')[-1].split('.')[0].replace('-', '.')
+
+            if isfile(my_dir + '\\' + result) and is_version_greater(result_version, exe_version):
                 exe = result
 
         self.file = my_dir + '\\' + exe

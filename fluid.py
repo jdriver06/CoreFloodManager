@@ -386,6 +386,10 @@ class BrineInjectionFluid:
 
         return self.brine.has_additive_salt()
 
+    def has_additive_non_salt(self) -> bool:
+
+        return self.brine.has_additive_non_salt()
+
     def scavengers_and_concentrations(self):
 
         return self.additives_and_concentrations(Scavenger)
@@ -1154,7 +1158,7 @@ class OilInjectionFluid:
 
     def get_density(self, temp: float):
         # print('filler density at ', temp, 'deg C')
-        return 0.95
+        return self.oil_sample.ref_objects[0].get_density(temp)
 
 
 class SpecificFluidView(QDialog):
@@ -2367,6 +2371,16 @@ class MixingFluidsPanel(QWidget):
             fluids_mixing_list.append([o.name, '', 1000000., c, mass])
             formulation_mixing_lines += 1
 
+        non_salts, concentrations = brine_if.brine.additive_non_salts_and_concentrations()
+        for ns, c in zip(non_salts, concentrations):
+            mass = 1.e-2 * c * total_mass
+            added_mass += mass
+            scso_mass += mass
+            line = '{} | ' + format_string + ' g\n'
+            mixing_text += line.format(ns, mass)
+            fluids_mixing_list.append([ns, '', 1000000., 10000. * c, mass])
+            formulation_mixing_lines += 1
+
         i = self.mixing_base_combo.currentIndex()
         brine = brines[i]
         total_fluid_salinity += brine.get_tds()
@@ -2451,9 +2465,12 @@ class Brine(Fluid):
     additive_salts = {"Na2CO3": [[2, 1], ["Na+", "CO3--"], 105.989], "NaCl": [[1, 1], ["Na+", "Cl-"], 58.443]}
     alkalis = ["Na2CO3"]
 
+    additive_non_salts = {"MEA": 61.08}
+    non_salt_alkalis = ["MEA"]
+
     def __init__(self, name: str, lithium=0., sodium=0., potassium=0., magnesium=0., calcium=0., barium=0.,
                  strontium=0., ironII=0., fluoride=0., chloride=0., bromide=0., bicarbonate=0., carbonate=0.,
-                 sulfate=0., sodium_carbonate=0., sodium_chloride=0., rv: float=1.):
+                 sulfate=0., sodium_carbonate=0., sodium_chloride=0., mea=0., rv: float=1.):
         super(Brine, self).__init__()
         self.project_manager_list = None
         self.name = name
@@ -2463,6 +2480,7 @@ class Brine(Fluid):
                             "Ba++": barium, "Sr++": strontium, "Fe++": ironII, "F-": fluoride, "Cl-": chloride,
                             "Br-": bromide, "HCO3-": bicarbonate, "CO3--": carbonate, "SO4--": sulfate}
         self.add_salt_composition = {"Na2CO3": sodium_carbonate, "NaCl": sodium_chloride}
+        self.add_non_salt_composition = {"MEA": mea}
 
     @staticmethod
     def get_ordered_keys() -> list:
@@ -2559,8 +2577,17 @@ class Brine(Fluid):
 
     def has_additive_salt(self) -> bool:
 
-        if self.add_salt_composition.keys():
-            return True
+        for value in self.add_salt_composition.values():
+            if value:
+                return True
+
+        return False
+
+    def has_additive_non_salt(self) -> bool:
+
+        for value in self.add_non_salt_composition.values():
+            if value:
+                return True
 
         return False
 
@@ -2586,6 +2613,21 @@ class Brine(Fluid):
                 concentrations.append(c)
 
         return salts, concentrations
+
+    def additive_non_salts_and_concentrations(self):
+
+        if not self.has_additive_non_salt():
+            return [], []
+
+        non_salts = []
+        concentrations = []
+
+        for non_salt, c in self.add_non_salt_composition.items():
+            if c > 0.:
+                non_salts.append(non_salt)
+                concentrations.append(c)
+
+        return non_salts, concentrations
 
     def has_alkali(self) -> bool:
 
@@ -2689,12 +2731,14 @@ class BrineTool(QDialog):
                     submit_visible = arg
 
         table_widget = QWidget(self)
-        table_layout = QHBoxLayout()
+        table_layout = QGridLayout()
         table_widget.setLayout(table_layout)
         self.table = BrineTable(self.brine)   # the brine composition table
-        table_layout.addWidget(self.table)    # add the table to the left_widget layout
+        table_layout.addWidget(self.table, 0, 0, 2, 1)    # add the table to the left_widget layout
         self.add_table = BrineTable(self.brine, 'add_salt_composition', 'float')  # the brine add salt composition table
-        table_layout.addWidget(self.add_table)  # add the table to the left_widget layout
+        table_layout.addWidget(self.add_table, 0, 1, 1, 1)  # add the table to the left_widget layout
+        self.add_non_table = BrineTable(self.brine, 'add_non_salt_composition', 'float')  # the brine add non-salt composition table
+        table_layout.addWidget(self.add_non_table, 1, 1, 1, 1)  # add the table to the left_widget layout
         layout.addWidget(table_widget)
 
         self.import_button = QPushButton('Import')  # the import button and slot connection
@@ -2790,6 +2834,11 @@ class BrineTool(QDialog):
             item = self.add_table.item(i, 0)
             composition.append(float(item.text()))
 
+        r = self.add_non_table.rowCount()
+        for i in range(r):
+            item = self.add_non_table.item(i, 0)
+            composition.append(float(item.text()))
+
         self.parent().submit_name(name, *composition, ref_viscosity)
         # self.brine.name = name
         self.brine.ref_viscosity = ref_viscosity
@@ -2817,7 +2866,7 @@ class BrineTable(QTableWidget):
     """This class augments QTableWidget so that a custom brine table is created, that the user can
     delete brine concentrations using the delete key, and so that input is vetted as positive numeric."""
 
-    def __init__(self, brine: Brine, composition_key: str='composition', data_type='int'):
+    def __init__(self, brine: Brine, composition_key: str = 'composition', data_type='int'):
         """The class constructor creates a table of the correct dimensions with correct labels."""
         super(BrineTable, self).__init__()
 

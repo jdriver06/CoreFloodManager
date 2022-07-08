@@ -847,8 +847,8 @@ class BrineDatabaseGUI(tk.Tk):
         path = db_default_path
         if not isdir('U:\\'):
             path = 'Q' + path[1:]
-        self.iconphoto(True, tk.PhotoImage(file=path + 'Coreholder Cropped.jpg'))
-        # self.iconphoto(True, tk.PhotoImage(file=db_default_path + 'UEORS logo cropped.png'))
+        # self.iconphoto(True, tk.PhotoImage(file='Coreholder Cropped.jpg'))
+        self.iconphoto(True, tk.PhotoImage(file=db_default_path + 'UEORS logo cropped.png'))
         self.brine_selector = BrineSelector(self)
         self.brine_view = BrineView(self, NominalBrine())
         self.print_view = PrintView(self)
