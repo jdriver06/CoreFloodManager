@@ -258,6 +258,18 @@ class SignalListManager:
             count = len(self.signal_lists)
             self.signal_lists.append(SignalList(self, count))
 
+    def remove_project_manager_lists(self):
+
+        for sl in self.signal_lists:
+            for obj in sl.objects:
+                obj.project_manager_list = None
+
+    def add_project_manager_lists(self, project_manager_list: QWidget):
+
+        for sl in self.signal_lists:
+            for obj in sl.objects:
+                obj.project_manager_list = project_manager_list
+
 
 class SignalListManagerWidget(QWidget):
 
@@ -332,7 +344,8 @@ class SignalListManagerWidget(QWidget):
         args = self.args
         print(cls, args)
         try:
-            cls(self, *args)
+            dlg = cls(self, *args)
+            dlg.show()
         except Exception as e:
             print('Error with add item: ', e)
 
@@ -353,6 +366,7 @@ class SignalListManagerWidget(QWidget):
         name = self.lists[self.selected_list].item(i)
         name = name.text()
         obj = self.pm_list.signal_lists[self.selected_list].objects[i]
+        print('Object Name: {}, List: {}'.format(obj.name, obj.project_manager_list))
 
         try:
             print('view_item', obj, self.parent())
@@ -449,10 +463,12 @@ class SignalListManagerWidget(QWidget):
 
         for i in range(len(self.names)):
             self.pm_list.signal_lists[i].objects = []
-            count = self.lists[i].count()
-            for j in range(count):
-                item = self.lists[i].takeItem(self.lists[i].item(count-1-j))
-                del item
+            # count = self.lists[i].count()
+            # for j in range(count):
+            #     item = self.lists[i].takeItem(count-1-j)
+            #     del item
+
+            self.lists[i].clear()
 
 
 class SignalTable(QTableWidget):

@@ -23,6 +23,7 @@ class InjectionFluidsView(QDialog):
 
     def __init__(self, slm: utils.SignalListManager, parent=None):
         super(InjectionFluidsView, self).__init__(parent)
+        parent.relink_list_widgets.connect(self.relink_list_widgets)
 
         self.setWindowTitle(' ')
 
@@ -51,6 +52,10 @@ class InjectionFluidsView(QDialog):
         self.sf = sf
 
         self.show()
+
+    def relink_list_widgets(self):
+
+        self.list_widget.pm_list.add_project_manager_lists(self.list_widget)
 
     def closeEvent(self, _):
 
@@ -409,6 +414,8 @@ class FloodExperimentSaveStructure:
 
 class FloodExperimentView(QMainWindow):
 
+    relink_list_widgets = pyqtSignal()
+
     def __init__(self, fe: FloodExperiment, parent=None):
         super(FloodExperimentView, self).__init__(parent=parent)
 
@@ -419,6 +426,7 @@ class FloodExperimentView(QMainWindow):
 
         sf = 1.
         if parent is not None:
+            parent.relink_list_widgets.connect(self.relink_list_widgets.emit)
             self.move(parent.x(), parent.y())
             sf = parent.width() / 900.
             self.setFixedSize(int(sf * 1000), int(sf * 400))

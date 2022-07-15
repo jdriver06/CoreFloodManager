@@ -20,7 +20,7 @@ from filelock import FileLock
 from copy import deepcopy
 
 
-__version__ = '0.11.0'
+__version__ = '0.11.1'
 
 # Patched issue with extra nan entry in oil if temps by discarding in polymer solution brine_if.
 
@@ -50,7 +50,8 @@ version_list = ['0.1.0',
                 '0.9.6',
                 '0.9.7',
                 '0.10.0',
-                '0.11.0']
+                '0.11.0',
+                '0.11.1']
 
 
 class ProjectManager:
@@ -105,8 +106,6 @@ class NameDialog(QDialog):
 
         self.b_layout.addWidget(submit)
 
-        self.show()
-
     def submit(self):
         name = self.edits[0].text()
         if not name:
@@ -159,22 +158,22 @@ class CFM_NameDialog(NameDialog):
                 msg.exec_()
                 return
             try:
+                self.parent().set_active(True)
                 obj = pkl.load(pickle_in)
                 self.parent().load_from_pickle(obj, pickle_in, lock)
             except Exception as e:
                 print(e)
-            self.parent().setVisible(True)
             self.close()
 
 
 class ProjectManagerView(QDialog):
 
+    relink_list_widgets = pyqtSignal()
+
     def __init__(self):
         super(ProjectManagerView, self).__init__()
         self.source_file = None
         self.file_lock = None
-
-        CFM_NameDialog(self)
 
         self.project_manager = ProjectManager()
 
@@ -184,7 +183,7 @@ class ProjectManagerView(QDialog):
         orientation = QApplication.primaryScreen().primaryOrientation()
         avail_size = QApplication.primaryScreen().availableSize()
         physical_size = QApplication.primaryScreen().physicalSize()
-        print(orientation, avail_size, physical_size)
+        # print(orientation, avail_size, physical_size)
         self.sf = sf
         self.setFixedSize(int(sf * 900), int(sf * 700))
 
@@ -253,17 +252,74 @@ class ProjectManagerView(QDialog):
         layout.addWidget(self.brine_list_widget, 2, 0, 1, 1)
         layout.addWidget(self.chemical_list_widget, 2, 1, 1, 2)
 
+        b_widget = QWidget(parent=self)
+        b_lyt = QHBoxLayout()
+        b_widget.setLayout(b_lyt)
+
+        self.open_button = QPushButton(parent=self, text='Open')
+        self.open_button.clicked.connect(self.open_clicked)
         self.save_button = QPushButton(parent=self, text='Save')
         self.save_button.clicked.connect(lambda: self.dump_pickle(True))
-        layout.addWidget(self.save_button, 3, 0, 1, 3)
+        b_lyt.addWidget(self.open_button)
+        b_lyt.addWidget(self.save_button)
+
+        layout.addWidget(b_widget, 3, 0, 1, 3)
+
+        self.show()
+        self.set_active(False)
+
+        CFM_NameDialog(self).exec_()
 
     def submit_name(self, name: str):
+
         self.project_manager.name = name
         self.setWindowTitle('Project Manager v' + __version__ + ': ' + self.project_manager.name)
-        self.show()
+
+    def set_active(self, active: bool):
+
+        self.plug_list_widget.setEnabled(active)
+        self.core_list_widget.setEnabled(active)
+        self.gas_list_widget.setEnabled(active)
+        self.oil_list_widget.setEnabled(active)
+        self.brine_list_widget.setEnabled(active)
+        self.chemical_list_widget.setEnabled(active)
+        self.flood_experiment_list_widget.setEnabled(active)
+        self.save_button.setEnabled(active)
 
     def create_pickle(self):
         return ProjectManagerSaveStructure(self)
+
+    def clear_ui(self):
+
+        self.plug_list_widget.clear_items()
+        self.oil_list_widget.clear_items()
+        self.gas_list_widget.clear_items()
+        self.core_list_widget.clear_items()
+        self.flood_experiment_list_widget.clear_items()
+        self.brine_list_widget.clear_items()
+        self.chemical_list_widget.clear_items()
+
+        self.submit_name('')
+
+    def link_project_manager_lists(self):
+
+        self.plug_list.add_project_manager_lists(self.plug_list_widget)
+        self.oil_list.add_project_manager_lists(self.oil_list_widget)
+        self.brine_list.add_project_manager_lists(self.brine_list_widget)
+        self.chemical_list.add_project_manager_lists(self.chemical_list_widget)
+        self.gas_list.add_project_manager_lists(self.gas_list_widget)
+        self.core_list.add_project_manager_lists(self.core_list_widget)
+        self.flood_experiment_list.add_project_manager_lists(self.flood_experiment_list_widget)
+
+    def remove_project_manager_lists(self):
+
+        self.plug_list.remove_project_manager_lists()
+        self.oil_list.remove_project_manager_lists()
+        self.brine_list.remove_project_manager_lists()
+        self.chemical_list.remove_project_manager_lists()
+        self.gas_list.remove_project_manager_lists()
+        self.core_list.remove_project_manager_lists()
+        self.flood_experiment_list.remove_project_manager_lists()
 
     def load_from_pickle(self, pickle, source_file, file_lock):
 
@@ -271,7 +327,6 @@ class ProjectManagerView(QDialog):
         self.file_lock = file_lock
         self.project_manager = pickle.project_manager
         self.submit_name(self.project_manager.name)
-        self.plug_list_widget.clear_items()
         self.plug_list = pickle.plug_list
         self.plug_list_widget.pm_list = pickle.plug_list
         self.plug_list_widget.populate_from_pm_list()
@@ -279,7 +334,6 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.plug_list_widget
 
-        self.oil_list_widget.clear_items()
         self.oil_list = pickle.oil_list
         # self.oil_list.signal_lists[1].set_ref_lists([self.oil_list.signal_lists[0],
         #                                              self.oil_list.signal_lists[2]])
@@ -289,7 +343,6 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.oil_list_widget
 
-        self.flood_experiment_list_widget.clear_items()
         self.flood_experiment_list = pickle.flood_experiment_list
         self.flood_experiment_list_widget.pm_list = pickle.flood_experiment_list
         self.flood_experiment_list_widget.populate_from_pm_list()
@@ -298,7 +351,6 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.flood_experiment_list_widget
 
-        self.brine_list_widget.clear_items()
         self.brine_list = pickle.brine_list
         self.brine_list_widget.pm_list = pickle.brine_list
         self.brine_list_widget.populate_from_pm_list()
@@ -306,7 +358,6 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.brine_list_widget
 
-        self.core_list_widget.clear_items()
         self.core_list = pickle.core_list
         self.core_list_widget.pm_list = pickle.core_list
         self.core_list_widget.populate_from_pm_list()
@@ -314,7 +365,6 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.core_list_widget
 
-        self.chemical_list_widget.clear_items()
         self.chemical_list = pickle.chemical_list
         if len(self.chemical_list.signal_lists) == 5:
             self.chemical_list.add_signal_list()
@@ -326,7 +376,6 @@ class ProjectManagerView(QDialog):
                 if obj is not None:
                     obj.project_manager_list = self.chemical_list_widget
 
-        self.gas_list_widget.clear_items()
         self.gas_list = pickle.gas_list
         self.gas_list_widget.pm_list = pickle.gas_list
         self.gas_list_widget.populate_from_pm_list()
@@ -759,6 +808,9 @@ class ProjectManagerView(QDialog):
                     if not hasattr(mfl, 'alkali_injected_recovered'):
                         mfl.alkali_injected = np.nan
 
+        if version_list[i] == '0.11.0':
+            pass
+
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):
 
@@ -766,7 +818,12 @@ class ProjectManagerView(QDialog):
             for name in name_list:
                 lw.lists[i].addItem(name)
 
-    def closeEvent(self, a0: QCloseEvent):
+    def check_save(self):
+
+        if not self.project_manager.name:
+            self.clear_ui()
+            return
+
         already = False
         if self.source_file is not None:
             already = osp.exists(self.source_file.name)
@@ -775,23 +832,33 @@ class ProjectManagerView(QDialog):
             dlg = QDialog(parent=self)
             lyt = QGridLayout()
             dlg.setLayout(lyt)
-            lyt.addWidget(QLabel(parent=dlg, text='Overwrite?'), 0, 0, 1, 2)
+            lyt.addWidget(QLabel(parent=dlg, text='Save Project?'), 0, 0, 1, 2)
             yes = QPushButton(parent=dlg, text='Yes')
             yes.clicked.connect(self.dump_pickle)
             yes.clicked.connect(dlg.close)
             no = QPushButton(parent=dlg, text='No')
             no.clicked.connect(dlg.close)
             no.clicked.connect(self.release_lock)
+            no.clicked.connect(self.clear_ui)
             lyt.addWidget(yes, 1, 0, 1, 1)
             lyt.addWidget(no, 1, 1, 1, 1)
-            dlg.exec()
+            dlg.exec_()
         else:
-            msg = QMessageBox(self, text='Dumping to ' + self.project_manager.name + '.cfm')
-            msg.exec_()
             self.dump_pickle()
+
+    def open_clicked(self):
+
+        self.set_active(False)
+        self.check_save()
+        CFM_NameDialog(parent=self).exec_()
+
+    def closeEvent(self, a0: QCloseEvent):
+
+        self.check_save()
 
     def dump_pickle(self, from_save_button=False):
 
+        self.remove_project_manager_lists()
         pickle_obj = self.create_pickle()
 
         if self.source_file is not None:
@@ -800,6 +867,7 @@ class ProjectManagerView(QDialog):
             copyfile(f_name, f_name[:-4] + '_copy_.cfm')
             self.source_file.close()
             self.source_file = None
+
             try:
                 pickle_out = open(f_name, 'wb')
                 pkl.dump(pickle_obj, pickle_out)
@@ -827,7 +895,13 @@ class ProjectManagerView(QDialog):
             pkl.dump(pickle_obj, pickle_out)
             pickle_out.close()
 
+        if not from_save_button:
+            self.clear_ui()
+        else:
+            self.link_project_manager_lists()
+
     def release_lock(self):
+
         self.file_lock.release()
         self.file_lock = None
 
@@ -841,6 +915,7 @@ class ProjectManagerSaveStructure:
         self.project_manager = pmv.project_manager
         # self.version = pmv.project_manager.version
         # print(self.version)
+
         self.plug_list = pmv.plug_list
         for c_list in self.plug_list.signal_lists:
             for obj in c_list.objects:

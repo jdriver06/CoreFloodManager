@@ -264,7 +264,15 @@ class Core:
 
         # print('deleting core.', self)
 
-        cores = self.project_manager_list.pm_list.signal_lists[0].objects
+        if self.project_manager_list is None:
+            return
+
+        try:
+            cores = self.project_manager_list.pm_list.signal_lists[0].objects
+        except Exception as e:
+            print(e)
+            return
+
         if self not in cores:
             return
 
