@@ -110,6 +110,9 @@ class CoreFlood:
 
         self.pore_volume = np.nan
         self.tracer_object = None
+        self.alkali_consumption_tracer_object = None
+        self.alkali_consumption = np.nan
+        self.alkali_injected_recovered = np.nan
         self.use_as_ref = False
         self.permeability = np.zeros(5)
         self.permeability[:] = np.nan

@@ -228,6 +228,9 @@ class BrineInjectionFluid:
         self.mixing_base_fluid = None
         self.mixing_dilution_fluid = None
 
+        self.pH = nan
+        self.RI = nan
+
         p_concentration = 0
         p = None
 
@@ -1227,7 +1230,7 @@ class SpecificFluidView(QDialog):
 
 class BrineInjectionFluidView(SpecificFluidView):
 
-    def __init__(self, parent, brine_if: InjectionFluid=None):
+    def __init__(self, parent, brine_if: InjectionFluid = None):
         super(BrineInjectionFluidView, self).__init__(parent=parent, injection_fluid=brine_if)
 
         # this is probably built on an incorrect premise...the "else" likely executes all the time, and works in the
@@ -1288,6 +1291,7 @@ class BrineInjectionFluidView(SpecificFluidView):
                 if not isinstance(self.parent().parent(), PolymerTool):
                     try:
                         MixingSheetTool(self.parent(), brine_if.specific_fluid)
+                        PHRITool(self.parent(), brine_if.specific_fluid)
                     except Exception as e:
                         QMessageBox(parent=self.parent(), text=str(e)).exec_()
                 self.fluid_name_edit.setText(brine_if.name)
@@ -1665,6 +1669,63 @@ class AdditiveWidgetGasMix(AdditiveWidget):
         self.concentration_text.setText('[%wt]')
 
 
+class PHRITool(QDialog):
+
+    def __init__(self, parent, brine_if: BrineInjectionFluid):
+        super(PHRITool, self).__init__(parent=parent)
+        sf = parent.parent().sf
+        self.sf = sf
+        self.brine_if = brine_if
+
+        self.setWindowTitle(brine_if.injection_fluid.name + ' pH/R.I. Tool')
+        self.setFixedSize(int(sf * 250), int(sf * 75))
+        lyt = QGridLayout()
+        self.setLayout(lyt)
+
+        ph_label = QLabel(parent=self, text='pH:')
+        ri_label = QLabel(parent=self, text='R.I. [o/oo]:')
+        self.ph_edit = QLineEdit(parent=self)
+        self.ph_edit.editingFinished.connect(lambda: self.vet_edit(self.ph_edit))
+        self.ri_edit = QLineEdit(parent=self)
+        self.ri_edit.editingFinished.connect(lambda: self.vet_edit(self.ri_edit))
+
+        lyt.addWidget(ph_label, 0, 0, 1, 1)
+        lyt.addWidget(ri_label, 1, 0, 1, 1)
+        lyt.addWidget(self.ph_edit, 0, 1, 1, 1)
+        lyt.addWidget(self.ri_edit, 1, 1, 1, 1)
+
+        self.sync_edits_to_if()
+        self.show()
+
+    def vet_edit(self, edit: QLineEdit):
+
+        txt = edit.text()
+
+        try:
+            val = float(txt)
+            if val < 0.:
+                raise ValueError
+
+            if edit == self.ph_edit:
+                self.brine_if.pH = val
+            elif edit == self.ri_edit:
+                self.brine_if.RI = val
+
+        except ValueError:
+            self.sync_edits_to_if()
+
+    def sync_edits_to_if(self):
+
+        self.ph_edit.clear()
+        self.ri_edit.clear()
+
+        if not isnan(self.brine_if.pH):
+            self.ph_edit.setText(str(self.brine_if.pH))
+
+        if not isnan(self.brine_if.RI):
+            self.ri_edit.setText(str(self.brine_if.RI))
+
+
 class MixingSheetTool(QDialog):
 
     def __init__(self, parent, brine_if: BrineInjectionFluid):
@@ -1679,7 +1740,7 @@ class MixingSheetTool(QDialog):
         self.setLayout(QVBoxLayout())
         self.setWindowTitle(brine_if.injection_fluid.name + ' Mixing Sheet Tool')
 
-        self.resize(415 * sf, 625 * sf)
+        self.resize(int(415 * sf), int(625 * sf))
 
         pmv = parent.parent().parent().parent()
         self.available_brines = pmv.brine_list.signal_lists[0].objects

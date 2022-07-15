@@ -334,8 +334,8 @@ class ProjectManagerView(QDialog):
             for obj in c_list.objects:
                 obj.project_manager_list = self.gas_list_widget
 
-        if self.project_manager.version > '0.4.0':
-            self.project_manager.version = '0.4.0'
+        # if self.project_manager.version > '0.4.0':
+        self.project_manager.version = '0.4.0'
         self.upgrade_version_to_current()
         # self.project_manager.version = '0.4.0'
 
@@ -733,6 +733,31 @@ class ProjectManagerView(QDialog):
             for brine in self.brine_list.signal_lists[0].objects:
                 if not hasattr(brine, 'add_non_salt_composition'):
                     brine.add_non_salt_composition = {"MEA": 0.}
+
+            for expt in self.flood_experiment_list.signal_lists[0].objects:
+                for inj_fld in expt.injection_fluids_list.signal_lists[0].objects:
+                    print(inj_fld.name, inj_fld.get_base_fluid_type())
+                    if inj_fld.get_base_fluid_type() == fluid.BaseFluidType.BRINE_BASED:
+                        if not hasattr(inj_fld.specific_fluid, 'pH'):
+                            inj_fld.specific_fluid.pH = np.nan
+                        if not hasattr(inj_fld.specific_fluid, 'RI'):
+                            inj_fld.specific_fluid.RI = np.nan
+
+                for fl in expt.floods:
+                    if not hasattr(fl, 'alkali_consumption_tracer_object'):
+                        fl.alkali_consumption_tracer_object = None
+                    if not hasattr(fl, 'alkali_consumption'):
+                        fl.alkali_consumption = np.nan
+                    if not hasattr(fl, 'alkali_injected_recovered'):
+                        fl.alkali_injected = np.nan
+
+                for mfl in expt.multi_floods_list.signal_lists[0].objects:
+                    if not hasattr(mfl, 'alkali_consumption_tracer_object'):
+                        mfl.alkali_consumption_tracer_object = None
+                    if not hasattr(mfl, 'alkali_consumption'):
+                        mfl.alkali_consumption = np.nan
+                    if not hasattr(mfl, 'alkali_injected_recovered'):
+                        mfl.alkali_injected = np.nan
 
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):

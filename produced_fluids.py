@@ -311,31 +311,36 @@ class ProducedFluidsView(QDialog):
         w_layout.addWidget(self.oil_cut_button, 2, 2, 1, 1)
 
         m_widget = QWidget(parent=self)
-        m_widget.setLayout(QHBoxLayout())
+        m_lyt = QGridLayout()
+        m_widget.setLayout(m_lyt)
         text = QLabel(parent=self, text=u' Shear rate for ' + chr(951) + u' [1/s]:')
         text.setFont(font)
-        m_widget.layout().addWidget(text)
+        m_lyt.addWidget(text, 0, 0, 1, 1)
         self.shear_rate_edit = QLineEdit(parent=self)
         self.shear_rate_edit.setText(str(pf.gamma))
         self.shear_rate_edit.setFont(font)
         self.shear_rate_edit.editingFinished.connect(self.gamma_update)
-        m_widget.layout().addWidget(self.shear_rate_edit)
+        m_lyt.addWidget(self.shear_rate_edit, 0, 1, 1, 1)
         text = QLabel(parent=self, text=u' Temp. for ' + chr(951) + u' [' + chr(176) + 'C]:')
         text.setFont(font)
-        m_widget.layout().addWidget(text)
+        m_lyt.addWidget(text, 0, 2, 1, 1)
         self.temp_edit = QLineEdit(parent=self)
         self.temp_edit.setText(str(pf.temperature))
         self.temp_edit.setFont(font)
         self.temp_edit.editingFinished.connect(self.temp_update)
-        m_widget.layout().addWidget(self.temp_edit)
+        m_lyt.addWidget(self.temp_edit, 0, 3, 1, 1)
         self.porosity_button = QPushButton(parent=self, text='Porosity')
         self.porosity_button.setFont(font)
         self.porosity_button.clicked.connect(self.porosity_tool)
-        m_widget.layout().addWidget(self.porosity_button)
+        m_lyt.addWidget(self.porosity_button, 0, 4, 1, 1)
         self.retention_button = QPushButton(parent=self, text='Retention')
         self.retention_button.setFont(font)
         self.retention_button.clicked.connect(self.retention_tool)
-        m_widget.layout().addWidget(self.retention_button)
+        m_lyt.addWidget(self.retention_button, 0, 5, 1, 1)
+        self.alkali_consumption_button = QPushButton(parent=self, text='Alkali Consumption')
+        self.alkali_consumption_button.setFont(font)
+        self.alkali_consumption_button.clicked.connect(self.alkali_consumption_tool)
+        m_lyt.addWidget(self.alkali_consumption_button, 1, 4, 1, 2)
 
         g_layout = QGridLayout()
         layout.addLayout(g_layout)
@@ -406,6 +411,7 @@ class ProducedFluidsView(QDialog):
 
         self.r_tool = None
         self.p_tool = None
+        self.c_tool = None
         self.tracer_table = self.measurements_table
         self.tracer_target = np.nan
 
@@ -555,6 +561,14 @@ class ProducedFluidsView(QDialog):
             print(e)
             # msg = QMessageBox(parent=self, text=e)
             # msg.exec_()
+
+    def alkali_consumption_tool(self):
+        try:
+            if self.c_tool is None:
+                self.c_tool = AlkaliConsumptionTool(self)
+
+        except Exception as e:
+            QMessageBox(parent=self, text=str(e)).exec_()
 
     def time_update(self):
 
@@ -1934,29 +1948,51 @@ class AqueousTracer:
 
         return y_data_interp
 
-    def get_aq_pv_apparent(self) -> float:
+    def is_tracer_area_above(self) -> bool:
+
+        _, cp = self.get_all_center_points()
+
+        if cp[-1] > cp[0]:
+            return True
+
+        return False
+
+    def get_area_above_below_tracer(self, above: bool) -> float:
 
         _, cp = self.get_all_center_points()
         cp = np.array(cp)
         non_nans = np.where(~np.isnan(cp))
         cp = cp[non_nans]
+        v_non_nan = self.volumes_original.copy()
+        v_non_nan = v_non_nan[non_nans]
+
+        if above:
+            return np.sum(np.multiply(1. - cp, v_non_nan)) + 0.
+        else:
+            return np.sum(np.multiply(cp, v_non_nan)) + 0.
+
+    def get_aq_pv_apparent(self) -> float:
+
+        _, cp = self.get_all_center_points()
+        cp = np.array(cp)
+        non_nans = np.where(~np.isnan(cp))
         cv_non_nan = self.cv_original.copy()
         cv_non_nan = cv_non_nan[non_nans]
         cv_aq_non_nan = self.cv_aq_original.copy()
         cv_aq_non_nan = cv_aq_non_nan[non_nans]
         v_non_nan = self.volumes_original.copy()
         v_non_nan = v_non_nan[non_nans]
-        v_aq_non_nan = self.aq_volumes_original.copy()
-        v_aq_non_nan = v_aq_non_nan[non_nans]
         additional_oil = self.cv_original[-1] - self.cv_aq_original[-1] - cv_non_nan[-1] + cv_aq_non_nan[-1]
-        additional_fluid = self.cv_original[-1] - cv_non_nan[-1]
         previous_fluid = cv_non_nan[0] - v_non_nan[0]
-        previous_oil = previous_fluid - (cv_aq_non_nan[0] - v_aq_non_nan[0])
+        all_oil = self.cv_original[-1] - self.cv_aq_original[-1]
 
-        if cp[-1] > cp[0]:
-            return np.sum(np.multiply(1. - cp, v_non_nan)) + additional_oil + previous_fluid
+        above = self.is_tracer_area_above()
+        tracer_area = self.get_area_above_below_tracer(above)
+
+        if above:
+            return tracer_area + additional_oil + previous_fluid
         else:
-            return np.sum(np.multiply(cp, v_non_nan)) + previous_oil + additional_fluid
+            return tracer_area + all_oil
 
     def get_aq_pv(self, true_aq_pv: float) -> float:
 
@@ -3291,6 +3327,142 @@ class ToConcentrationTable(QTableWidget):
 
         else:
             super(ToConcentrationTable, self).keyPressEvent(e)
+
+
+class AlkaliConsumptionTool(QDialog):
+
+    def __init__(self, parent: ProducedFluidsView):
+        super(AlkaliConsumptionTool, self).__init__(parent=parent)
+
+        self.setWindowTitle('Alkali Consumption Tool')
+        layout = QVBoxLayout()
+        h_layout = QHBoxLayout()
+        h_layout_2 = QHBoxLayout()
+        self.setLayout(layout)
+        self.consumption_text = QLabel(parent=self, text='Moles OH- Recovered: ')
+        font = self.consumption_text.font()
+        font.setPointSize(12)
+        self.consumption_text.setFont(font)
+        h_layout.addWidget(self.consumption_text)
+        self.send_consumption_button = QPushButton(parent=self, text='Set as alkali consumption')
+        self.send_consumption_button.setFont(font)
+        self.send_consumption_button.clicked.connect(self.update_flood_alkali_consumption)
+
+        h_layout_2.addWidget(self.send_consumption_button)
+
+        layout.addLayout(h_layout)
+        layout.addLayout(h_layout_2)
+
+        sf = parent.width() / 1010.
+        self.setFixedSize(int(sf * 550), int(sf * 550))
+
+        self.cv = parent.produced_fluids.cumulative_volume()
+        self.cv_aq = parent.produced_fluids.cumulative_aq_volume()
+        name = '[OH-]'
+
+        if parent.parent().flood.alkali_consumption_tracer_object is None:
+
+            ph = parent.produced_fluids.measurements[0, :]
+            tracer = np.power(10., ph - 14.)
+
+            non_nan = np.where(~np.isnan(tracer))
+
+            if not non_nan[0].tolist():
+                QMessageBox(parent=parent, text='No non-nan data available.').exec_()
+                return
+
+            self.tracer_object = AqueousTracer(name, self.cv.copy(), self.cv_aq.copy(), tracer.copy())
+            self.tracer_object.set_normalization_max(1.)
+            self.send_consumption_button.setEnabled(False)
+
+        else:
+
+            self.tracer_object = parent.parent().flood.alkali_consumption_tracer_object
+
+        self.tracer_view = AqueousTracerView(parent=self, tracer=self.tracer_object)
+        self.tracer_view.y_axis.setMax(np.max(self.tracer_object.tracer))
+        self.tracer_view.y_axis.setTitleText(name + ' [M]')
+
+        self.tracer_view.staircase_updated.connect(self.update_consumption)
+        self.tracer_view.link_tracer.connect(self.link_button_clicked)
+
+        layout.addWidget(self.tracer_view)
+
+        self.consumption = np.nan
+        self.update_consumption([])
+        self.show()
+
+    def update_consumption_text(self):
+
+        inj = self.calc_injected_recovered()
+        txt = 'Moles OH- Inj.: {:.2E}, Rec.: {:.2E}, Consumption: {:.1f}%'
+        self.consumption_text.setText(txt.format(inj, self.consumption, 100. * (inj - self.consumption) / inj))
+
+    def calc_consumption(self):
+
+        return 0.001 * self.tracer_object.get_area_above_below_tracer(False)
+
+    def calc_injected_recovered(self):
+
+        fl = self.parent().parent().flood
+        sw = fl.experiment.get_flood_saturation(fl)
+        pv = fl.get_experiment_total_pore_volume()
+        f_list = fl.get_fluids_list()
+        volume_injected = self.tracer_object.get_inc_cv()[-1]
+        volume_remaining = pv * sw
+        injected_volume_recovered = volume_injected - volume_remaining
+
+        inj = 0.
+        tot_vol = 0.
+
+        if isinstance(fl, flood.MultiCoreFlood):
+            fl_list = fl.ref_floods
+            for fli, fi in zip(fl_list[:-1], f_list[:-1]):
+                if tot_vol + fli.planned_volume <= injected_volume_recovered:
+                    inj += 0.001 * fli.planned_volume * np.power(10., fi.specific_fluid.pH - 14.)
+                    tot_vol += fli.planned_volume
+                else:
+                    inj += 0.001 * (injected_volume_recovered - tot_vol) * np.power(10., fi.specific_fluid.pH - 14.)
+                    tot_vol = injected_volume_recovered
+                    break
+
+        inj += 0.001 * (injected_volume_recovered - tot_vol) * np.power(10., f_list[-1].specific_fluid.pH - 14.)
+
+        return inj
+
+    def link_button_clicked(self, link: bool):
+
+        if link:
+            self.set_flood_tracer_object()
+            self.send_consumption_button.setEnabled(True)
+        else:
+            self.clear_flood_tracer_object()
+            self.send_consumption_button.setEnabled(False)
+
+    def update_flood_alkali_consumption(self):
+
+        self.parent().parent().flood.alkali_injected_recovered = self.calc_injected_recovered()
+        self.parent().parent().flood.alkali_consumption = self.consumption
+
+    def set_flood_tracer_object(self):
+
+        self.parent().parent().flood.alkali_consumption_tracer_object = self.tracer_object
+
+    def clear_flood_tracer_object(self):
+
+        self.parent().parent().flood.alkali_consumption_tracer_object = None
+
+    def update_consumption(self, _):
+
+        self.consumption = self.calc_consumption()
+        self.update_consumption_text()
+
+    def closeEvent(self, _):
+
+        try:
+            self.parent().c_tool = None
+        except Exception as e:
+            print(e)
 
 
 if __name__ == '__main__':
