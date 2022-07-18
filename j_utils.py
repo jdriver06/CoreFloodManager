@@ -1,8 +1,9 @@
 
 from PyQt5.Qt import QPolygonF, QFileDialog, pyqtSignal, Qt
 from PyQt5.QtWidgets import QMessageBox, QListWidget, QListWidgetItem, QVBoxLayout, QHBoxLayout, \
-    QWidget, QGroupBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem
-from PyQt5.QtGui import QMouseEvent, QKeyEvent
+    QWidget, QGroupBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QMenu, QDialog, QLineEdit
+from PyQt5.QtGui import QMouseEvent, QKeyEvent, QCloseEvent
+from PyQt5.QtCore import QEvent
 # from PyQt5.QtSql import QSqlQuery
 import numpy as np
 from enum import Enum, auto
@@ -117,6 +118,96 @@ def file_open_dlg(direct, filter, save=False):
 #             self.prepare(query_string)
 
 
+class NameDialog(QDialog):
+
+    submit_clicked = pyqtSignal(str, list)
+
+    def __init__(self, parent, fields: list, data_types: list):
+        super(NameDialog, self).__init__(parent=parent)
+
+        if not fields:
+            self.close()
+            return
+
+        if len(fields) != len(data_types) + 1:
+            self.close()
+            return
+
+        # icon = QIcon('Coreholder Cropped.jpg')
+        # self.setWindowIcon(icon)
+        self.setWindowTitle(' ')
+
+        lyt = QVBoxLayout()
+        self.setLayout(lyt)
+
+        self.labels = []
+        self.edits = []
+        self.data_types = data_types
+
+        for field in fields:
+            if isinstance(field, list):
+                self.labels.append(QLabel(parent=self, text=field[0] + ':'))
+                self.edits.append(QComboBox(parent=self))
+                self.edits[-1].addItems(field[1:])
+            else:
+                self.labels.append(QLabel(parent=self, text=field + ':'))
+                self.edits.append(QLineEdit(parent=self))
+
+            lyt.addWidget(self.labels[-1])
+            lyt.addWidget(self.edits[-1])
+
+        self.b_layout = QHBoxLayout(self)
+        lyt.addLayout(self.b_layout)
+
+        submit = QPushButton(parent=self, text='Submit')
+        submit.clicked.connect(self.submit)
+
+        self.b_layout.addWidget(submit)
+
+    def submit(self):
+        name = self.edits[0].text()
+        if not name:
+            return
+        else:
+            args = []
+            if self.data_types:
+                for i, data_type in enumerate(self.data_types):
+                    e = self.edits[i+1]
+                    try:
+                        if isinstance(e, QLineEdit):
+                            args.append(data_type(e.text()))
+                        elif isinstance(e, QComboBox):
+                            args.append(e.itemText(e.currentIndex()))
+                    except Exception as e:
+                        print(e)
+                        return
+
+            # self.parent().submit_name(name, *args)
+            self.submit_clicked.emit(name, args)
+            self.close()
+
+    def closeEvent(self, a0: QCloseEvent):
+        p = self.parent()
+        if not p.isVisible():
+            p.close()
+
+
+class RenameDialog(NameDialog):
+
+    def __init__(self, parent, i: int):
+        super(RenameDialog, self).__init__(parent=parent, fields=['Name'], data_types=[])
+        self.i = i
+
+    def submit(self):
+        name = self.edits[0].text()
+        if not name:
+            return
+
+            # self.parent().submit_name(name, *args)
+        self.submit_clicked.emit(name, [self.i])
+        self.close()
+
+
 class SignalList:
 
     def __init__(self, parent, i: int):
@@ -196,6 +287,7 @@ class SignalListWidget(QListWidget):
         for name in sl.item_names:
             self.addItem(QListWidgetItem(name), False)
         self.itemClicked.connect(self.update_current_row_in_list)
+        self.installEventFilter(self)
 
     def set_ref_lists(self, ref_lists: list):
         self.signal_list.ref_lists = ref_lists
@@ -210,6 +302,18 @@ class SignalListWidget(QListWidget):
                     index = i
                     break
             self.signal_list.ref_indecies.append(index)
+
+    def eventFilter(self, source, event: QEvent):
+        if source == self and event.type() == QEvent.ContextMenu:
+            menu = QMenu()
+            menu.addAction('Re-name')
+            i = self.currentRow()
+            if menu.exec_(event.globalPos()):
+                dlg = RenameDialog(self, i)
+                dlg.submit_clicked.connect(self.parent().submit_rename)
+                dlg.exec_()
+            return True
+        return super(SignalListWidget, self).eventFilter(source, event)
 
     def mousePressEvent(self, e: QMouseEvent):
         super(SignalListWidget, self).mousePressEvent(e)
@@ -345,6 +449,8 @@ class SignalListManagerWidget(QWidget):
         print(cls, args)
         try:
             dlg = cls(self, *args)
+            if hasattr(dlg, 'submit_clicked'):
+                dlg.submit_clicked.connect(self.submit_name_wrapper)
             dlg.show()
         except Exception as e:
             print('Error with add item: ', e)
@@ -369,7 +475,7 @@ class SignalListManagerWidget(QWidget):
         print('Object Name: {}, List: {}'.format(obj.name, obj.project_manager_list))
 
         try:
-            print('view_item', obj, self.parent())
+            print('view_item', obj, self.parent(), obj.view_class)
             obj.view_class(obj, self.parent())
         except Exception as e:
             print('Error with view item:', e)
@@ -392,6 +498,28 @@ class SignalListManagerWidget(QWidget):
                 self.lists[j].setStyleSheet('border: 1px solid black')
             else:
                 self.lists[j].setStyleSheet('border: 1px solid lightgray')
+
+    def submit_rename(self, name: str, i: list) -> bool:
+
+        i = i[0]
+
+        s_list = self.pm_list.signal_lists[self.selected_list]
+        s_view = self.lists[self.selected_list]
+
+        if i >= len(s_list.objects):
+            return False
+
+        for obj in s_list.objects:
+            if obj.name == name:
+                return False
+
+        s_list.objects[i].name = name
+        s_view.currentItem().setText(name)
+
+        return True
+
+    def submit_name_wrapper(self, name: str, args: list):
+        self.submit_name(name, *args)
 
     def submit_name(self, name: str, *args):
 

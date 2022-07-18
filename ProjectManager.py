@@ -5,6 +5,7 @@ from PyQt5.QtGui import QCloseEvent, QMouseEvent
 from PyQt5.Qt import QIcon, pyqtSignal, QApplication
 from PyQt5.QtCore import QModelIndex
 import j_utils as utils
+from j_utils import NameDialog
 from core import Core, CoreSection, CoreView, CoreViewForm, CoreEntryForm, CoreHolder, CoreSaveDlg, \
     CoreSaveStructure, JQTextEdit
 import fluid
@@ -62,77 +63,6 @@ class ProjectManager:
         self.version = __version__
 
 
-class NameDialog(QDialog):
-
-    def __init__(self, parent, fields: list, data_types: list):
-        super(NameDialog, self).__init__(parent=parent)
-
-        if not fields:
-            self.close()
-            return
-
-        if len(fields) != len(data_types) + 1:
-            self.close()
-            return
-
-        icon = QIcon('Coreholder Cropped.jpg')
-        self.setWindowIcon(icon)
-        self.setWindowTitle(' ')
-
-        lyt = QVBoxLayout()
-        self.setLayout(lyt)
-
-        self.labels = []
-        self.edits = []
-        self.data_types = data_types
-
-        for field in fields:
-            if isinstance(field, list):
-                self.labels.append(QLabel(parent=self, text=field[0] + ':'))
-                self.edits.append(QComboBox(parent=self))
-                self.edits[-1].addItems(field[1:])
-            else:
-                self.labels.append(QLabel(parent=self, text=field + ':'))
-                self.edits.append(QLineEdit(parent=self))
-
-            lyt.addWidget(self.labels[-1])
-            lyt.addWidget(self.edits[-1])
-
-        self.b_layout = QHBoxLayout(self)
-        lyt.addLayout(self.b_layout)
-
-        submit = QPushButton(parent=self, text='Submit')
-        submit.clicked.connect(self.submit)
-
-        self.b_layout.addWidget(submit)
-
-    def submit(self):
-        name = self.edits[0].text()
-        if not name:
-            return
-        else:
-            args = []
-            if self.data_types:
-                for i, data_type in enumerate(self.data_types):
-                    e = self.edits[i+1]
-                    try:
-                        if isinstance(e, QLineEdit):
-                            args.append(data_type(e.text()))
-                        elif isinstance(e, QComboBox):
-                            args.append(e.itemText(e.currentIndex()))
-                    except Exception as e:
-                        print(e)
-                        return
-
-            self.parent().submit_name(name, *args)
-            self.close()
-
-    def closeEvent(self, a0: QCloseEvent):
-        p = self.parent()
-        if not p.isVisible():
-            p.close()
-
-
 class CFM_NameDialog(NameDialog):
 
     def __init__(self, parent):
@@ -179,7 +109,7 @@ class ProjectManagerView(QDialog):
 
         icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
-        sf = 92. / QApplication.primaryScreen().physicalDotsPerInchY()
+        sf = 300. / QApplication.primaryScreen().physicalDotsPerInchY()
         orientation = QApplication.primaryScreen().primaryOrientation()
         avail_size = QApplication.primaryScreen().availableSize()
         physical_size = QApplication.primaryScreen().physicalSize()
@@ -268,12 +198,17 @@ class ProjectManagerView(QDialog):
         self.show()
         self.set_active(False)
 
-        CFM_NameDialog(self).exec_()
+        dlg = CFM_NameDialog(self)
+        dlg.submit_clicked.connect(self.submit_clicked_wrapper)
+        dlg.exec_()
 
     def submit_name(self, name: str):
 
         self.project_manager.name = name
         self.setWindowTitle('Project Manager v' + __version__ + ': ' + self.project_manager.name)
+
+    def submit_clicked_wrapper(self, _, __):
+        self.set_active(True)
 
     def set_active(self, active: bool):
 
@@ -330,40 +265,27 @@ class ProjectManagerView(QDialog):
         self.plug_list = pickle.plug_list
         self.plug_list_widget.pm_list = pickle.plug_list
         self.plug_list_widget.populate_from_pm_list()
-        for c_list in self.plug_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.plug_list_widget
+        self.plug_list.add_project_manager_lists(self.plug_list_widget)
 
         self.oil_list = pickle.oil_list
-        # self.oil_list.signal_lists[1].set_ref_lists([self.oil_list.signal_lists[0],
-        #                                              self.oil_list.signal_lists[2]])
         self.oil_list_widget.pm_list = pickle.oil_list
         self.oil_list_widget.populate_from_pm_list()
-        for c_list in self.oil_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.oil_list_widget
+        self.oil_list.add_project_manager_lists(self.oil_list_widget)
 
         self.flood_experiment_list = pickle.flood_experiment_list
         self.flood_experiment_list_widget.pm_list = pickle.flood_experiment_list
         self.flood_experiment_list_widget.populate_from_pm_list()
-        # import numpy as np
-        for c_list in self.flood_experiment_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.flood_experiment_list_widget
+        self.flood_experiment_list.add_project_manager_lists(self.flood_experiment_list_widget)
 
         self.brine_list = pickle.brine_list
         self.brine_list_widget.pm_list = pickle.brine_list
         self.brine_list_widget.populate_from_pm_list()
-        for c_list in self.brine_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.brine_list_widget
+        self.brine_list.add_project_manager_lists(self.brine_list_widget)
 
         self.core_list = pickle.core_list
         self.core_list_widget.pm_list = pickle.core_list
         self.core_list_widget.populate_from_pm_list()
-        for c_list in self.core_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.core_list_widget
+        self.core_list.add_project_manager_lists(self.core_list_widget)
 
         self.chemical_list = pickle.chemical_list
         if len(self.chemical_list.signal_lists) == 5:
@@ -371,17 +293,12 @@ class ProjectManagerView(QDialog):
         self.chemical_list_widget.pm_list = self.chemical_list
         self.chemical_list.signal_lists[5].set_ref_lists([self.brine_list.signal_lists[0]])
         self.chemical_list_widget.populate_from_pm_list()
-        for c_list in self.chemical_list.signal_lists:
-            for obj in c_list.objects:
-                if obj is not None:
-                    obj.project_manager_list = self.chemical_list_widget
+        self.chemical_list.add_project_manager_lists(self.chemical_list_widget)
 
         self.gas_list = pickle.gas_list
         self.gas_list_widget.pm_list = pickle.gas_list
         self.gas_list_widget.populate_from_pm_list()
-        for c_list in self.gas_list_widget.pm_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = self.gas_list_widget
+        self.gas_list.add_project_manager_lists(self.gas_list_widget)
 
         # if self.project_manager.version > '0.4.0':
         self.project_manager.version = '0.4.0'
@@ -850,7 +767,9 @@ class ProjectManagerView(QDialog):
 
         self.set_active(False)
         self.check_save()
-        CFM_NameDialog(parent=self).exec_()
+        dlg = CFM_NameDialog(parent=self)
+        dlg.submit_clicked.connect(lambda: self.set_active(True))
+        dlg.exec_()
 
     def closeEvent(self, a0: QCloseEvent):
 
@@ -917,9 +836,10 @@ class ProjectManagerSaveStructure:
         # print(self.version)
 
         self.plug_list = pmv.plug_list
-        for c_list in self.plug_list.signal_lists:
-            for obj in c_list.objects:
-                obj.project_manager_list = None
+        self.plug_list.remove_project_manager_lists()
+        # for c_list in self.plug_list.signal_lists:
+        #     for obj in c_list.objects:
+        #         obj.project_manager_list = None
         self.plug_name_list = self.extract_names(pmv.plug_list_widget)
 
         self.core_list = pmv.core_list

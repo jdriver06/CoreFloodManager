@@ -1176,7 +1176,11 @@ class SpecificFluidView(QDialog):
         self.injection_fluid = injection_fluid
 
         # sf = parent.width() / 280.
-        sf = parent.parent().sf
+        try:
+            sf = parent.parent().sf
+        except Exception as e:
+            print(e)
+            sf = 1.
         self.sf = sf
         self.setFixedWidth(int(sf * 350))
         self.setFixedHeight(int(sf * 130))
@@ -3704,7 +3708,6 @@ def formulation_view(formulation: Formulation, parent):
 class BrineInjectionFluidFormulationViewWrapper:
 
     def __init__(self, parent, *args):
-        print(args)
         BrineInjectionFluidFormulationView(parent)
 
 
