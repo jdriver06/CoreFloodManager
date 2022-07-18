@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QApplication, QFileDialog, QWidget, QMessageBox, QDi
 from PyQt5.QtWidgets import QMainWindow, QCheckBox, QListWidget, QListWidgetItem
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QLogValueAxis, QScatterSeries
 from PyQt5.Qt import QGridLayout, QIcon, QGroupBox, QPointF, pyqtSignal
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtGui import QKeyEvent
 from PyQt5 import QtGui
 from numpy import average, array, zeros, nan, isnan, where, unique, power, divide, exp, sqrt, log10, linspace, \
@@ -196,9 +196,10 @@ class InjectionFluid:
             return BaseFluidType.UNRECOGNIZED
 
 
-class InjectionFluidView:
+class InjectionFluidView(QObject, utils.SignalView):
 
     def __init__(self, injection_fluid: InjectionFluid, parent):
+        super(InjectionFluidView, self).__init__()
 
         try:
             if hasattr(parent.list_widget.parent().parent(), 'experiment'):
@@ -207,11 +208,16 @@ class InjectionFluidView:
             QMessageBox(parent=parent, text=str(e)).exec_()
 
         if isinstance(injection_fluid.specific_fluid, BrineInjectionFluid):
-            BrineInjectionFluidView(parent=parent.list_widget, brine_if=injection_fluid)
+            view = BrineInjectionFluidView(parent=parent.list_widget, brine_if=injection_fluid)
+            view.close_signal.connect(self.relay_close_signal)
         elif isinstance(injection_fluid.specific_fluid, OilInjectionFluid):
-            OilInjectionFluidView(parent=parent.list_widget, oil_if=injection_fluid)
+            view = OilInjectionFluidView(parent=parent.list_widget, oil_if=injection_fluid)
+            view.close_signal.connect(self.relay_close_signal)
             # if injection_fluid.specific_fluid.polymer_solution is not None:
             #     PolymerSolutionView(injection_fluid.specific_fluid.polymer_solution, parent=parent.list_widget)
+
+    def relay_close_signal(self, _):
+        self.close_signal.emit(self)
 
 
 class BrineInjectionFluid:
@@ -497,7 +503,7 @@ class Oil:
         return self.gas_mix.gases, ppm
 
 
-class OilTool(QDialog):
+class OilTool(QDialog, utils.SignalView):
 
     editValueChanged = pyqtSignal()
 
@@ -773,6 +779,8 @@ class OilTool(QDialog):
         if self.lo_density_tool is not None:
             self.lo_density_tool.close()
 
+        self.close_signal.emit(self)
+
 
 class LiveOilDensityVsTDialog(QDialog):
 
@@ -847,7 +855,7 @@ class Diluent:
         self.project_manager_list = pm
 
 
-class OilSampleTool(QDialog):
+class OilSampleTool(QDialog, utils.SignalView):
 
     def __init__(self, oil_sample: OilSample, parent, *args):
         super(OilSampleTool, self).__init__(parent=parent)
@@ -929,6 +937,10 @@ class OilSampleTool(QDialog):
     def enable_rheology_list(self):
 
         self.list_widget.setEnabled(True)
+
+    def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+        super(OilSampleTool, self).closeEvent(a0)
+        self.close_signal.emit(self)
 
 
 class OilSampleIFTTool(QDialog):
@@ -1164,10 +1176,14 @@ class OilInjectionFluid:
         return self.oil_sample.ref_objects[0].get_density(temp)
 
 
-class SpecificFluidView(QDialog):
+class SpecificFluidView(QDialog, utils.SignalView):
 
     def __init__(self, parent, injection_fluid: InjectionFluid=None):
         super(SpecificFluidView, self).__init__(parent=parent)
+
+        self.rheology_tool = None
+        self.phri_tool = None
+        self.mixing_sheet_tool = None
 
         mode = 'build'
         if injection_fluid is not None:
@@ -1230,6 +1246,35 @@ class SpecificFluidView(QDialog):
             self.layout().removeWidget(w)
             del w
             self.setFixedHeight(self.height() - int(self.sf * 51))
+
+    def launch_mixing_sheet_tool(self):
+        if isinstance(self.injection_fluid.specific_fluid, BrineInjectionFluid):
+            self.mixing_sheet_tool = MixingSheetTool(self.parent(), self.injection_fluid.specific_fluid)
+            self.mixing_sheet_tool.close_signal.connect(self.mixing_sheet_tool_closed)
+
+    def mixing_sheet_tool_closed(self, _):
+        self.mixing_sheet_tool = None
+
+    def launch_phri_tool(self):
+        if isinstance(self.injection_fluid.specific_fluid, BrineInjectionFluid):
+            self.phri_tool = PHRITool(self.parent(), self.injection_fluid.specific_fluid)
+            self.phri_tool.close_signal.connect(self.phri_tool_closed)
+
+    def phri_tool_closed(self, _):
+        self.phri_tool = None
+
+    def rheology_tool_closed(self, _):
+        self.rheology_tool = None
+
+    def closeEvent(self, a0) -> None:
+        super(SpecificFluidView, self).closeEvent(a0)
+        self.close_signal.emit(self)
+        if self.rheology_tool is not None:
+            self.rheology_tool.close()
+        if self.phri_tool is not None:
+            self.phri_tool.close()
+        if self.mixing_sheet_tool is not None:
+            self.mixing_sheet_tool.close()
 
 
 class BrineInjectionFluidView(SpecificFluidView):
@@ -1294,8 +1339,8 @@ class BrineInjectionFluidView(SpecificFluidView):
             if isinstance(brine_if.specific_fluid, BrineInjectionFluid):
                 if not isinstance(self.parent().parent(), PolymerTool):
                     try:
-                        MixingSheetTool(self.parent(), brine_if.specific_fluid)
-                        PHRITool(self.parent(), brine_if.specific_fluid)
+                        self.launch_mixing_sheet_tool()
+                        self.launch_phri_tool()
                     except Exception as e:
                         QMessageBox(parent=self.parent(), text=str(e)).exec_()
                 self.fluid_name_edit.setText(brine_if.name)
@@ -1306,7 +1351,8 @@ class BrineInjectionFluidView(SpecificFluidView):
                     else:
                         try:
                             ps.primary_additive.estimate_viscosity(ps.base_fluid, 75., 7.3, ps.concentration)
-                            PolymerSolutionView(brine_if.specific_fluid.polymer_solution, self.parent())
+                            self.rheology_tool = PolymerSolutionView(brine_if.specific_fluid.polymer_solution, self.parent())
+                            self.rheology_tool.close_signal.connect(self.rheology_tool_closed)
                         except Exception as e:
                             QMessageBox(parent=self, text=str(e)).exec_()
 
@@ -1448,6 +1494,8 @@ class OilInjectionFluidView(SpecificFluidView):
                 self.fluid_name_edit.setText(oil_if.name)
                 if oil_if.specific_fluid.polymer_solution is not None:
                     psv = PolymerSolutionView(oil_if.specific_fluid.polymer_solution, self.parent())
+                    self.rheology_tool = psv
+                    self.rheology_tool.close_signal.connect(self.rheology_tool_closed)
                     if is_true_if and not oil_if.specific_fluid.additives:
                         psv.submit_button.clicked.disconnect()
                         psv.allow_data_exclusion = False
@@ -1673,7 +1721,7 @@ class AdditiveWidgetGasMix(AdditiveWidget):
         self.concentration_text.setText('[%wt]')
 
 
-class PHRITool(QDialog):
+class PHRITool(QDialog, utils.SignalView):
 
     def __init__(self, parent, brine_if: BrineInjectionFluid):
         super(PHRITool, self).__init__(parent=parent)
@@ -1729,8 +1777,12 @@ class PHRITool(QDialog):
         if not isnan(self.brine_if.RI):
             self.ri_edit.setText(str(self.brine_if.RI))
 
+    def closeEvent(self, a0) -> None:
+        super(PHRITool, self).closeEvent(a0)
+        self.close_signal.emit(self)
 
-class MixingSheetTool(QDialog):
+
+class MixingSheetTool(QDialog, utils.SignalView):
 
     def __init__(self, parent, brine_if: BrineInjectionFluid):
         super(MixingSheetTool, self).__init__(parent=parent)
@@ -1813,6 +1865,10 @@ class MixingSheetTool(QDialog):
                                                         self.fluids_mixing_salinity, file_name)
         except Exception as e:
             QMessageBox(parent=self, text=str(e)).exec_()
+
+    def closeEvent(self, a0) -> None:
+        super(MixingSheetTool, self).closeEvent(a0)
+        self.close_signal.emit(self)
 
 
 class MixingValueEdit(QLineEdit):
@@ -2752,7 +2808,7 @@ class Brine(Fluid):
         return i, brines[i]
 
 
-class BrineTool(QDialog):
+class BrineTool(QDialog, utils.SignalView):
     """This class encodes a GUI for entering brine names and compositions into the database brine table,
     and for displaying the names of the brines in the database for selection by the user."""
 
@@ -2926,6 +2982,8 @@ class BrineTool(QDialog):
             # self.bd_gui.export_app = None
             self.bd_gui.destroy()
 
+        self.close_signal.emit(self)
+
 
 class BrineTable(QTableWidget):
     """This class augments QTableWidget so that a custom brine table is created, that the user can
@@ -3087,7 +3145,7 @@ class Polymer:
         return 1.
 
 
-class PolymerTool(QDialog):
+class PolymerTool(QDialog, utils.SignalView):
 
     def __init__(self, poly: Polymer, parent, *args):
         # print('Polymer Tool:', poly, parent, args)
@@ -3134,6 +3192,7 @@ class PolymerTool(QDialog):
     def closeEvent(self, a0: QtGui.QCloseEvent):
         if self.polymer_rheology_view is not None:
             self.polymer_rheology_view.close()
+        self.close_signal.emit(self)
 
 
 class PolymerRheology:
@@ -3686,7 +3745,7 @@ class Formulation:
         self.name = name
         self.project_manager_list = None
         self.ref_objects = ref_objects
-        self.view_class = formulation_view
+        self.view_class = FormulationView
         self.sc_list = ref_objects[1:]
         self.concentrations = args[0][0]
 
@@ -3703,6 +3762,17 @@ class Formulation:
 
 def formulation_view(formulation: Formulation, parent):
     BrineInjectionFluidFormulationView(parent=parent, brine_if=formulation.brine_if)
+
+
+class FormulationView(QObject, utils.SignalView):
+
+    def __init__(self, formulation: Formulation, parent):
+        super(FormulationView, self).__init__()
+        real_view = BrineInjectionFluidFormulationView(parent=parent, brine_if=formulation.brine_if)
+        real_view.close_signal.connect(self.relay_close_signal)
+
+    def relay_close_signal(self, _):
+        self.close_signal.emit(self)
 
 
 class BrineInjectionFluidFormulationViewWrapper:
@@ -4368,7 +4438,7 @@ class PolymerSolution(Fluid):
         return power(10., power(10., m * temp + b))
 
 
-class PolymerSolutionView(QMainWindow):
+class PolymerSolutionView(QMainWindow, utils.SignalView):
     """This class creates the main GUI as a subclass of QMainWindow. The central widget contains QAxes
     for displaying the data, back and next QButtons for traversing multiple measurements in a data file,
     a submit button for submitting information to the database, and a ShearViscosityWidget for entering
@@ -5013,6 +5083,7 @@ class PolymerSolutionView(QMainWindow):
 
     def closeEvent(self, a0: QtGui.QCloseEvent):
         print(self, a0)
+        self.close_signal.emit(self)
 
 
 class OilInjectionFluidRheologySelectionTool(QDialog):

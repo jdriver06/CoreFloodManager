@@ -75,25 +75,33 @@ class CFM_NameDialog(NameDialog):
     def load(self):
 
         file_name = utils.file_open_dlg('', '(Core Flood Manager) *.cfm', False)
-        if not file_name or osp.isfile(file_name + '.lock'):
-            return
-        else:
+
+        if osp.isfile(file_name + '.lock'):
             try:
-                lock = FileLock(file_name + '.lock')
-                lock.acquire()
-                pickle_in = open(file_name, 'rb')
-            except Exception as e:
-                msg = QMessageBox(parent=self, title='File load error',
-                                  text=e)
-                msg.exec_()
+                remove(file_name + '.lock')
+            except PermissionError as e:
+                QMessageBox(parent=self, text='File {} is in use.'.format(file_name)).exec_()
                 return
-            try:
-                self.parent().set_active(True)
-                obj = pkl.load(pickle_in)
-                self.parent().load_from_pickle(obj, pickle_in, lock)
-            except Exception as e:
-                print(e)
-            self.close()
+
+        if not file_name:
+            return
+
+        try:
+            lock = FileLock(file_name + '.lock')
+            lock.acquire()
+            pickle_in = open(file_name, 'rb')
+        except Exception as e:
+            QMessageBox(parent=self, text='File open error: {}'.format(e)).exec_()
+            return
+
+        try:
+            self.parent().set_active(True)
+            obj = pkl.load(pickle_in)
+            self.parent().load_from_pickle(obj, pickle_in, lock)
+        except Exception as e:
+            QMessageBox(parent=self, text='Error loading project: {}'.format(e)).exec_()
+
+        self.close()
 
 
 class ProjectManagerView(QDialog):
@@ -109,7 +117,7 @@ class ProjectManagerView(QDialog):
 
         icon = QIcon('Coreholder Cropped.jpg')
         self.setWindowIcon(icon)
-        sf = 300. / QApplication.primaryScreen().physicalDotsPerInchY()
+        sf = 92. / QApplication.primaryScreen().physicalDotsPerInchY()
         orientation = QApplication.primaryScreen().primaryOrientation()
         avail_size = QApplication.primaryScreen().availableSize()
         physical_size = QApplication.primaryScreen().physicalSize()
@@ -726,7 +734,9 @@ class ProjectManagerView(QDialog):
                         mfl.alkali_injected = np.nan
 
         if version_list[i] == '0.11.0':
-            pass
+
+            for formulation in self.chemical_list.signal_lists[5].objects:
+                formulation.view_class = fluid.FormulationView
 
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):

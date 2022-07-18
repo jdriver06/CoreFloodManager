@@ -67,7 +67,7 @@ class InjectionFluidsView(QDialog):
             print(e)
 
 
-class MultiFloodsView(QDialog):
+class MultiFloodsView(QDialog, utils.SignalView):
 
     def __init__(self, slm: utils.SignalListManager, parent=None):
         super(MultiFloodsView, self).__init__(parent=parent)
@@ -89,6 +89,8 @@ class MultiFloodsView(QDialog):
             self.parent().mf_view = None
         except Exception as e:
             print(e)
+
+        self.close_signal.emit(self)
 
 
 class FloodExperiment:
@@ -412,7 +414,7 @@ class FloodExperimentSaveStructure:
             self.flood_save_structures.append(flood.CoreFloodSaveStructure(f))
 
 
-class FloodExperimentView(QMainWindow):
+class FloodExperimentView(QMainWindow, utils.SignalView):
 
     relink_list_widgets = pyqtSignal()
 
@@ -1166,7 +1168,8 @@ class FloodExperimentView(QMainWindow):
         if a0.key() == Qt.Key_Control:
             self.control_key_pressed = False
 
-    def closeEvent(self, _):
+    def closeEvent(self, a0):
+        super(FloodExperimentView, self).closeEvent(a0)
         for icon in self.flood_icons:
             if icon.cff is not None:
                 icon.cff.close()
@@ -1174,6 +1177,8 @@ class FloodExperimentView(QMainWindow):
             self.mf_view.close()
         if self.if_view is not None:
             self.if_view.close()
+
+        self.close_signal.emit(self)
 
 
 class FloodIcon(QFrame):

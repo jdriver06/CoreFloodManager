@@ -1,9 +1,9 @@
 
 from PyQt5.Qt import QPolygonF, QFileDialog, pyqtSignal, Qt
 from PyQt5.QtWidgets import QMessageBox, QListWidget, QListWidgetItem, QVBoxLayout, QHBoxLayout, \
-    QWidget, QGroupBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QMenu, QDialog, QLineEdit
+    QWidget, QGroupBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QMenu, QDialog, QLineEdit, QComboBox
 from PyQt5.QtGui import QMouseEvent, QKeyEvent, QCloseEvent
-from PyQt5.QtCore import QEvent
+from PyQt5.QtCore import QEvent, QObject
 # from PyQt5.QtSql import QSqlQuery
 import numpy as np
 from enum import Enum, auto
@@ -208,6 +208,11 @@ class RenameDialog(NameDialog):
         self.close()
 
 
+class SignalView:
+
+    close_signal = pyqtSignal(object)
+
+
 class SignalList:
 
     def __init__(self, parent, i: int):
@@ -273,6 +278,38 @@ class SignalList:
 
         return None
 
+    def move_current_object_up(self):
+
+        if self.current_row == 0:
+            return
+
+        new_objects = [c_obj if (i < self.current_row - 1 or i > self.current_row)
+                       else self.objects[self.current_row] for i, c_obj in enumerate(self.objects)]
+        new_objects[self.current_row] = self.objects[self.current_row - 1]
+
+        for c_obj_1, c_obj_2 in zip(self.objects, new_objects):
+            print(c_obj_1.name, c_obj_2.name)
+
+        self.objects = new_objects
+        self.reload_item_names()
+
+    def move_current_object_down(self):
+
+        if self.current_row == len(self.objects) - 1:
+            return
+
+        new_objects = [c_obj if (i < self.current_row or i > self.current_row + 1)
+                       else self.objects[self.current_row] for i, c_obj in enumerate(self.objects)]
+        new_objects[self.current_row] = self.objects[self.current_row + 1]
+
+        self.objects = new_objects
+        self.reload_item_names()
+
+    def reload_item_names(self):
+
+        for i, c_obj in enumerate(self.objects):
+            self.item_names[i] = c_obj.name
+
 
 class SignalListWidget(QListWidget):
 
@@ -284,10 +321,19 @@ class SignalListWidget(QListWidget):
         font.setPointSize(10)
         self.setFont(font)
         self.signal_list = sl
-        for name in sl.item_names:
-            self.addItem(QListWidgetItem(name), False)
+        self.shift_pressed = False
+        self.views = []
+        self.load_from_signal_list()
         self.itemClicked.connect(self.update_current_row_in_list)
+        self.currentItemChanged.connect(self.update_current_row_in_list)
         self.installEventFilter(self)
+
+    def load_from_signal_list(self):
+
+        self.clear()
+        for name in self.signal_list.item_names:
+            self.addItem(QListWidgetItem(name), False)
+            self.views.append(None)
 
     def set_ref_lists(self, ref_lists: list):
         self.signal_list.ref_lists = ref_lists
@@ -313,13 +359,48 @@ class SignalListWidget(QListWidget):
                 dlg.submit_clicked.connect(self.parent().submit_rename)
                 dlg.exec_()
             return True
+
         return super(SignalListWidget, self).eventFilter(source, event)
 
     def mousePressEvent(self, e: QMouseEvent):
         super(SignalListWidget, self).mousePressEvent(e)
         self.selected.emit(self.signal_list.index)
+        
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+
+        if e.key() == Qt.Key_Shift:
+            self.shift_pressed = True
+        elif e.key() == Qt.Key_Up and self.shift_pressed:
+            cr = self.signal_list.current_row
+            self.signal_list.move_current_object_up()
+            self.load_from_signal_list()
+            self.signal_list.current_row = cr
+            self.setCurrentRow(self.signal_list.current_row)
+        elif e.key() == Qt.Key_Down and self.shift_pressed:
+            cr = self.signal_list.current_row
+            self.signal_list.move_current_object_down()
+            self.load_from_signal_list()
+            self.signal_list.current_row = cr
+            self.setCurrentRow(self.signal_list.current_row)
+
+        super(SignalListWidget, self).keyPressEvent(e)
+
+    def keyReleaseEvent(self, a0: QKeyEvent) -> None:
+        super(SignalListWidget, self).keyReleaseEvent(a0)
+        if a0.key() == Qt.Key_Shift:
+            self.shift_pressed = False
+
+    def view_closed(self, view):
+
+        i = self.views.index(view)
+        if i > -1:
+            self.views[i] = None
 
     def takeItem(self, row: int):
+
+        if self.views[row] is not None:
+            QMessageBox(parent=self, text='Close item view before removing.').exec_()
+            return None
 
         obj = self.signal_list.objects[row]
         for referencer in self.signal_list.referencers:
@@ -333,10 +414,11 @@ class SignalListWidget(QListWidget):
             obj.__del__()
 
         self.signal_list.objects.pop(row)
+        self.views.pop(row)
 
         return item
 
-    def addItem(self, aitem: QListWidgetItem, add_to_sl: bool=True):
+    def addItem(self, aitem: QListWidgetItem, add_to_sl: bool=True) -> bool:
 
         if self.signal_list.check_name_before_adding(str(aitem)) and add_to_sl:
             return False
@@ -345,6 +427,7 @@ class SignalListWidget(QListWidget):
 
         if add_to_sl:
             self.signal_list.item_names.append(str(aitem))
+            self.views.append(None)
 
         return True
 
@@ -439,9 +522,10 @@ class SignalListManagerWidget(QWidget):
 
         for signal_list_widget, signal_list in zip(self.lists, self.pm_list.signal_lists):
             signal_list_widget.signal_list = signal_list
-            for name in signal_list.item_names:
-                item = QListWidgetItem(name)
-                signal_list_widget.addItem(item, False)
+            signal_list_widget.load_from_signal_list()
+            # for name in signal_list.item_names:
+            #     item = QListWidgetItem(name)
+            #     signal_list_widget.addItem(item, False)
 
     def add_item(self):
         cls = self.cls[0][self.selected_list]
@@ -458,6 +542,12 @@ class SignalListManagerWidget(QWidget):
     def remove_item(self):
 
         i = self.lists[self.selected_list].currentRow()
+        txt = self.lists[self.selected_list].item(i).text()
+
+        if QMessageBox.question(self, 'Delete item.', 'Are you sure you want to delete item {}?'.format(txt)) == \
+                QMessageBox.No:
+            return
+
         item = self.lists[self.selected_list].takeItem(i)
 
         if item is None:
@@ -469,6 +559,9 @@ class SignalListManagerWidget(QWidget):
 
     def view_item(self):
         i = self.lists[self.selected_list].currentRow()
+        print(self.lists[self.selected_list].views)
+        if self.lists[self.selected_list].views[i] is not None:
+            return
         name = self.lists[self.selected_list].item(i)
         name = name.text()
         obj = self.pm_list.signal_lists[self.selected_list].objects[i]
@@ -476,15 +569,27 @@ class SignalListManagerWidget(QWidget):
 
         try:
             print('view_item', obj, self.parent(), obj.view_class)
-            obj.view_class(obj, self.parent())
+            view = obj.view_class(obj, self.parent())
+            if hasattr(view, 'close_signal'):
+                print('\nview has close_signal: {}'.format(view))
+                view.close_signal.connect(self.lists[self.selected_list].view_closed)
+                self.lists[self.selected_list].views[i] = view
         except Exception as e:
             print('Error with view item:', e)
             try:
-                obj.view_class(self, obj, name, False)
+                view = obj.view_class(self, obj, name, False)
+                if hasattr(view, 'close_signal'):
+                    print('\nview has close_signal: {}'.format(view))
+                    view.close_signal.connect(self.lists[self.selected_list].view_closed)
+                    self.lists[self.selected_list].views[i] = view
             except Exception as e2:
                 print(e2)
                 try:
-                    obj.view_class(obj, self.parent(), [])
+                    view = obj.view_class(obj, self.parent(), [])
+                    if hasattr(view, 'close_signal'):
+                        print('\nview has close_signal: {}'.format(view))
+                        view.close_signal.connect(self.lists[self.selected_list].view_closed)
+                        self.lists[self.selected_list].views[i] = view
                 except Exception as e3:
                     print(e3)
         finally:

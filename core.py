@@ -8,6 +8,7 @@ from PyQt5.QtGui import QPaintEvent, QMouseEvent, QFocusEvent
 import numpy as np
 import copy
 import pickle as pkl
+import j_utils as utils
 
 
 __version__ = '0.1.0'
@@ -383,7 +384,7 @@ class CoreHolder:
         self.rect = QRect(20, 20, 135, 630)
 
 
-class CoreViewForm(QMainWindow):
+class CoreViewForm(QMainWindow, utils.SignalView):
 
     def __init__(self, c: Core=None, parent=None):
 
@@ -447,6 +448,10 @@ class CoreViewForm(QMainWindow):
     def file_save(self):
 
         CoreSaveDlg(self)
+
+    def closeEvent(self, a0) -> None:
+        super(CoreViewForm, self).closeEvent(a0)
+        self.close_signal.emit(self)
 
 
 class CoreSaveDlg(QDialog):

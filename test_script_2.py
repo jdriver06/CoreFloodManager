@@ -1,13 +1,13 @@
 
-import socket
+import j_utils
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_address = ('192.168.1.206', 10000)
-sock.bind(server_address)
-sock.listen(1)
 
-conn, client_address = sock.accept()
+class Dummy(j_utils.SignalView):
 
-print(conn, client_address)
+    def __init__(self):
+        super(Dummy, self).__init__()
+        self.attr = 3
 
-conn.close()
+
+if __name__ == '__main__':
+    print(hasattr(Dummy(), 'close_signal'))
