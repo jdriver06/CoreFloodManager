@@ -2419,12 +2419,15 @@ class MixingFluidsPanel(QWidget):
                     continue
                 i = b_combo.currentIndex()
                 brine = brines[i]
+                original_c = brine.add_salt_composition[s]
                 stock_c = float(c_edit.text())
+                brine.add_salt_composition[s] = stock_c + original_c
                 mass = (c / stock_c) * total_mass
                 added_mass += mass
                 added_salt += mass * brine.get_tds()
                 total_fluid_salinity += 10000. * c
                 added_ions += mass * brine.get_composition_array()
+                brine.add_salt_composition[s] = original_c
                 line = '{} ({:.1f}%) | ' + format_string + ' g\n'
                 mixing_text += line.format(s, stock_c, mass)
                 if stock_c < 100.:
@@ -2505,7 +2508,6 @@ class MixingFluidsPanel(QWidget):
         i = self.mixing_base_combo.currentIndex()
         brine = brines[i]
         total_fluid_salinity += brine.get_tds()
-        print('total fluid tds [ppm]:', total_fluid_salinity)
         k = self.mixing_dilution_combo.currentIndex()
         d_brine = brines[k]
         x_factor = float(self.mixing_dilution_concentration_edit.text())
@@ -2522,6 +2524,9 @@ class MixingFluidsPanel(QWidget):
             fluids_mixing_list.append([d_brine.name, '', 1000000., 1000000., mixing_brine_mass])
             fluids_mixing_list.append(['DI', '', 1000000., 1000000., 0.])
         else:
+            print(total_ions_target)
+            print(added_ions)
+            print(mixing_brine_ions)
             masses_by_ion = divide(total_ions_target[non_zeros] - added_ions[non_zeros], mixing_brine_ions[non_zeros])
             mixing_brine_mass = np_min(masses_by_ion)
             remaining_ion_masses = total_ions_target - added_ions - mixing_brine_ions * mixing_brine_mass
@@ -2626,9 +2631,16 @@ class Brine(Fluid):
     def get_composition_array(self) -> array:
 
         composition = []
+        ordered_keys = Brine.get_ordered_keys()
 
-        for key in self.get_ordered_keys():
+        for key in ordered_keys:
             composition.append(self.composition[key])
+
+        for key, value in self.add_salt_composition.items():
+            add_salt_info = Brine.additive_salts[key]
+            for stoic, ion_name in zip(add_salt_info[0], add_salt_info[1]):
+                ind = ordered_keys.index(ion_name)
+                composition[ind] += value * 10000. * (stoic * Brine.ion_weights[ion_name] / add_salt_info[2])
 
         return array(composition)
 
