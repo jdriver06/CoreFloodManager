@@ -136,6 +136,16 @@ class CoreFlood:
         self.y_lims = [np.nan, np.nan]
         self.y_lims_rf = [np.nan, np.nan]
 
+    def copy_me(self) -> object:
+
+        new_core_flood = CoreFlood(self.name + ' (copy)', InjectionFluid('', [Brine('')], [[], 'brine-based']),
+                                   self.core, self.experiment)
+        new_core_flood.temperature = self.temperature
+        new_core_flood.back_pressure = self.back_pressure
+        new_core_flood.planned_volume = self.planned_volume
+
+        return new_core_flood
+
     def get_experiment_total_pore_volume(self):
 
         return self.core.my_bulk_volume() * self.experiment.petro_parameters['phi'][1]
@@ -673,6 +683,12 @@ class MultiCoreFlood(CoreFlood):
         self.reset_effluent_from_ref_floods()
 
         self.view_class = MultiCoreFloodView
+
+    def copy_me_special(self, ref_floods: list) -> object:
+
+        new_mf = MultiCoreFlood(self.name + ' (copy)', ref_floods, self.experiment)
+
+        return new_mf
 
     def set_base_properties_from_flood(self, f: CoreFlood):
 

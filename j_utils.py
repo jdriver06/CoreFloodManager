@@ -468,6 +468,11 @@ class SignalListManagerWidget(QWidget):
         self.cls = cls
         self.args = args
         self.pm_list = pml
+        self.copy_object = None
+        self.copy_list_index = -1
+        self.control_pressed = False
+        self.c_pressed = False
+        self.v_pressed = False
         # self.objects = []
 
         # if len(cls[1]) > 0:
@@ -595,6 +600,45 @@ class SignalListManagerWidget(QWidget):
         finally:
             return
 
+    def copy_current_object(self):
+
+        cl = self.lists[self.selected_list]
+        item = self.lists[self.selected_list].currentItem()
+
+        if item is None:
+            return
+
+        obj = cl.signal_list.objects[cl.currentRow()]
+
+        if not hasattr(obj, 'copy_me'):
+            return
+
+        try:
+            self.copy_object = obj.copy_me()
+            print(self.copy_object.name, self.copy_object)
+            self.copy_list_index = self.selected_list
+        except Exception as e:
+            QMessageBox(parent=self, text=str(e)).exec_()
+
+    def paste_current_object(self):
+
+        if self.selected_list != self.copy_list_index:
+            print('selected_list is not copy_list_index.')
+            return
+
+        if self.copy_object is None:
+            print('copy_object is None')
+            return
+
+        print(self.lists[self.copy_list_index].signal_list.objects)
+        self.lists[self.copy_list_index].signal_list.objects.append(self.copy_object)
+        self.lists[self.copy_list_index].signal_list.item_names.append(self.copy_object.name)
+        print(self.lists[self.copy_list_index].signal_list.objects)
+        print('re-loading from signal_list')
+        self.lists[self.copy_list_index].load_from_signal_list()
+        self.copy_object = None
+        self.copy_list_index = -1
+
     def select_list(self, i: int):
 
         self.selected_list = i
@@ -702,6 +746,35 @@ class SignalListManagerWidget(QWidget):
             #     del item
 
             self.lists[i].clear()
+
+    def press_or_release(self, a0: QKeyEvent, press: bool):
+
+        if a0.key() == Qt.Key_Control:
+            self.control_pressed = press
+
+        elif a0.key() == Qt.Key_C:
+            self.c_pressed = press
+
+        elif a0.key() == Qt.Key_V:
+            self.v_pressed = press
+
+    def keyPressEvent(self, a0: QKeyEvent) -> None:
+        super(SignalListManagerWidget, self).keyPressEvent(a0)
+
+        self.press_or_release(a0, True)
+
+        if self.control_pressed:
+
+            if self.c_pressed:
+                self.copy_current_object()
+
+            elif self.v_pressed:
+                self.paste_current_object()
+
+    def keyReleaseEvent(self, a0: QKeyEvent) -> None:
+        super(SignalListManagerWidget, self).keyReleaseEvent(a0)
+
+        self.press_or_release(a0, False)
 
 
 class SignalTable(QTableWidget):

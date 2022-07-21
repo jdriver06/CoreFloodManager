@@ -160,6 +160,19 @@ class InjectionFluid:
         elif args[1] == 'oil-based':
             self.specific_fluid = OilInjectionFluid(self)
 
+    def copy_me(self) -> object:
+
+        args = [self.concentrations]
+        if self.get_base_fluid_type() == BaseFluidType.BRINE_BASED:
+            args.append('brine-based')
+        else:
+            args.append('oil-based')
+        args = [args]
+
+        new_injection_fluid = InjectionFluid(self.name + ' (copy)', self.ref_objects, *args)
+
+        return new_injection_fluid
+
     def get_viscosity(self, temp: float, shear: float):
         # print('getting viscosity in InjectionFluid')
         return self.specific_fluid.get_viscosity(temp, shear)

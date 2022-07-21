@@ -126,6 +126,40 @@ class FloodExperiment:
         self.multi_floods_list.signal_lists[0].set_ref_lists([self.floods_list.signal_lists[0]])
         self.ift_dict = dict()
 
+    def copy_me(self) -> object:
+
+        new_experiment = FloodExperiment(self.name + ' (copy)', self.core, self.project_manager_list)
+
+        for inj_fluid in self.injection_fluids_list.signal_lists[0].objects:
+            new_inj_fluid = inj_fluid.copy_me()
+            new_inj_fluid.name = inj_fluid.name
+            new_experiment.injection_fluids_list.signal_lists[0].objects.append(new_inj_fluid)
+            new_experiment.injection_fluids_list.signal_lists[0].item_names.append(new_inj_fluid.name)
+
+        for c_flood in self.floods:
+            new_c_flood = c_flood.copy_me()
+            new_c_flood.name = c_flood.name
+            new_c_flood.experiment = new_experiment
+            i = self.injection_fluids_list.signal_lists[0].objects.index(c_flood.fluid)
+            new_c_flood.fluid = new_experiment.injection_fluids_list.signal_lists[0].objects[i]
+            new_experiment.floods.append(new_c_flood)
+
+        for mf in self.multi_floods_list.signal_lists[0].objects:
+            ref_floods = []
+            for rf in mf.ref_floods:
+                ref_floods.append(new_experiment.floods[self.floods.index(rf)])
+            new_mf = mf.copy_me_special(ref_floods)
+            new_mf.name = mf.name
+            new_mf.experiment = new_experiment
+            new_experiment.multi_floods_list.signal_lists[0].objects.append(new_mf)
+            new_experiment.multi_floods_list.signal_lists[0].item_names.append(new_mf.name)
+
+        for key, value in self.petro_parameters.items():
+            new_experiment.petro_parameters[key][0] = value[1]
+            new_experiment.petro_parameters[key][1] = value[1]
+
+        return new_experiment
+
     def find_multiflood(self, f: flood.CoreFlood):
         """ This function returns the multi-flood claiming flood f if it exists, otherwise, None is returned. """
 
