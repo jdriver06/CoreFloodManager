@@ -173,14 +173,14 @@ class InjectionFluid:
 
         return new_injection_fluid
 
-    def get_viscosity(self, temp: float, shear: float):
+    def get_viscosity(self, temp: float, shear: float) -> float:
         # print('getting viscosity in InjectionFluid')
         return self.specific_fluid.get_viscosity(temp, shear)
 
-    def get_density(self, temp: float):
+    def get_density(self, temp: float) -> float:
         return self.specific_fluid.get_density(temp)
 
-    def get_fluid_type(self):
+    def get_fluid_type(self) -> FluidType:
 
         if isinstance(self.specific_fluid, BrineInjectionFluid):
             if self.specific_fluid.polymer_solution is None:
@@ -197,7 +197,7 @@ class InjectionFluid:
         else:
             return FluidType.UNRECOGNIZED
 
-    def get_base_fluid_type(self):
+    def get_base_fluid_type(self) -> BaseFluidType:
 
         if isinstance(self.specific_fluid, BrineInjectionFluid):
             return BaseFluidType.BRINE_BASED

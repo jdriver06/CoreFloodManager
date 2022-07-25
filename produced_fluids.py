@@ -559,8 +559,8 @@ class ProducedFluidsView(QDialog):
                 self.r_tool = RetentionTool(self)
         except Exception as e:
             print(e)
-            # msg = QMessageBox(parent=self, text=e)
-            # msg.exec_()
+            msg = QMessageBox(parent=self, text=str(e))
+            msg.exec_()
 
     def alkali_consumption_tool(self):
         try:
@@ -2464,7 +2464,7 @@ class RetentionTool(QDialog):
                 ppm_prev = fluid_prev.specific_fluid.polymer_solution.concentration
                 viscosity_prev = fluid_prev.get_viscosity(fl.temperature, parent.produced_fluids.gamma)
             elif fluid_prev.get_fluid_type() == FluidType.BRINE:
-                viscosity_prev = fluid_prev.brine.get_viscosity(fl.temperature)
+                viscosity_prev = fluid_prev.specific_fluid.brine.get_viscosity(fl.temperature)
 
         self.ppm_prev = ppm_prev
         if not np.isnan(parent.produced_fluids.retention):
