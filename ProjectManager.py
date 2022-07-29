@@ -19,9 +19,10 @@ from os import remove
 from shutil import copyfile
 from filelock import FileLock
 from copy import deepcopy
+import http.client
 
 
-__version__ = '0.11.1'
+__version__ = '0.12.0'
 
 # Patched issue with extra nan entry in oil if temps by discarding in polymer solution brine_if.
 
@@ -52,7 +53,10 @@ version_list = ['0.1.0',
                 '0.9.7',
                 '0.10.0',
                 '0.11.0',
-                '0.11.1']
+                '0.11.1',
+                '0.11.2',
+                '0.11.3',
+                '0.12.0']
 
 
 class ProjectManager:
@@ -61,6 +65,8 @@ class ProjectManager:
         self.core_pickles = []
         self.name = ''
         self.version = __version__
+
+        self.http_conn = http.client.HTTPConnection('localhost:5000')
 
 
 class CFM_NameDialog(NameDialog):
@@ -738,6 +744,16 @@ class ProjectManagerView(QDialog):
             for formulation in self.chemical_list.signal_lists[5].objects:
                 formulation.view_class = fluid.FormulationView
 
+        if version_list[i] == '0.11.1':
+            pass
+
+        if version_list[i] == '0.11.2':
+            pass
+
+        if version_list[i] == '0.11.3':
+            if not hasattr(self.project_manager, 'http_conn'):
+                self.project_manager.http_conn = http.client.HTTPConnection('localhost:5000')
+
     @staticmethod
     def load_list_widget(lw: utils.SignalListManagerWidget, p_name_list: list):
 
@@ -870,6 +886,7 @@ class ProjectManagerSaveStructure:
         self.flood_experiment_list = pmv.flood_experiment_list
         for c_list in self.flood_experiment_list.signal_lists:
             for obj in c_list.objects:
+                print(obj.name)
                 obj.project_manager_list = None
                 for if_obj in obj.injection_fluids_list.signal_lists[0].objects:
                     if hasattr(if_obj, pml_attr):

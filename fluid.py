@@ -2907,29 +2907,26 @@ class BrineTool(QDialog, utils.SignalView):
         self.show()     # show the initialized DatabaseBrineTool
 
     def import_from_db(self):
-        if self.bd_gui is not None:
-            return
-        from BrineDatabase import BrineDatabaseGUI
+
         try:
-            self.bd_gui = BrineDatabaseGUI(export_app=self)
-            self.bd_gui.brine_view.import_button.pack_forget()
-            self.bd_gui.brine_view.total_mass_entry.grid_forget()
-            self.bd_gui.brine_view.total_mass_label.grid_forget()
-            self.bd_gui.brine_view.conc_factor_label.grid_forget()
-            self.bd_gui.brine_view.conc_factor_entry.grid_forget()
-            self.bd_gui.print_view.grid_forget()
-            # bd_width = str(int(self.sf * 680))
-            # bd_height = str(int(self.sf * 487))
-            # self.bd_gui.geometry(bd_width + 'x' + bd_height)
-            self.bd_gui.brine_view.send_button.config(width=20, height=4)
-            self.bd_gui.brine_view.button_frame.grid_configure(pady=(15, 16))
-            self.bd_gui.brine_view.send_button.config(command=self.export_brine, text='Send to Brine Tool',
-                                                      state='normal')
-            self.bd_gui.title('Import brine...')
-            self.bd_gui.mainloop()
+            pmv = self.parent().parent()
+            pmv.project_manager.http_conn.request('GET', '/current_brine')
+            response = pmv.project_manager.http_conn.getresponse()
+            pmv.project_manager.http_conn.close()
+            response_str = response.read().decode()[1:-1]
+            if not response_str:
+                return
+            response_str = response_str.split(',')
+            self.name_edit.setText(response_str[0])
+            for ion_data in response_str[1:]:
+                ion_data = ion_data.split(':')
+                ion = ion_data[0][1:]
+                ppm = ion_data[1][1:-4]
+                self.table.brine.composition[ion] = int(float(ppm))
+            self.table.sync_to_brine()
+
         except Exception as e:
             QMessageBox(parent=self, text=str(e)).exec_()
-            return
 
     def export_brine(self):
         brine = self.bd_gui.brine_view.n_brine
@@ -3069,6 +3066,14 @@ class BrineTable(QTableWidget):
         except ValueError:
             # If the user entered something non-numeric, re-zero.
             item.setText(str(self.convert_to_datatype(0.)))
+
+    def sync_to_brine(self):
+
+        composition = self.brine.__dict__[self.composition_key].values()
+        composition = list(composition)
+
+        for r in range(self.rowCount()):
+            self.item(r, 0).setText(str(self.convert_to_datatype(composition[r])))
 
 
 class Polymer:

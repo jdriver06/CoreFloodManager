@@ -1948,9 +1948,8 @@ class AqueousTracer:
 
         return y_data_interp
 
-    def is_tracer_area_above(self) -> bool:
-
-        _, cp = self.get_all_center_points()
+    @staticmethod
+    def is_tracer_area_above(cp: np.array) -> bool:
 
         if cp[-1] > cp[0]:
             return True
@@ -1986,7 +1985,7 @@ class AqueousTracer:
         previous_fluid = cv_non_nan[0] - v_non_nan[0]
         all_oil = self.cv_original[-1] - self.cv_aq_original[-1]
 
-        above = self.is_tracer_area_above()
+        above = self.is_tracer_area_above(cp[non_nans])
         tracer_area = self.get_area_above_below_tracer(above)
 
         if above:
@@ -2756,6 +2755,7 @@ class RetentionTool(QDialog):
         mass = expt.get_core_mass(cut)
         # aq_pv = tracer_object.get_aq_pv(pv * sw)
         rt_pv = tracer_object.get_retention(true_aq_pv)
+
         if not isinstance(fl, flood.MultiCoreFlood):
             ret = rt_pv * inj_ppm
         else:
@@ -3145,36 +3145,52 @@ class ToConcentrationTool(QDialog):
         else:
             self.parent().parent().produced_fluids.ppm_to_abs_fit_params = np.array([])
 
-        if ppm.tolist():
-            self.x_axis.setMax(np.max(ppm))
-            self.y_axis.setMax(np.max(meas))
-            used_order = min(self.fit_order, len(ppm.tolist()) - 1)
-            if used_order == 1:
-                z, _ = curve_fit(ToConcentrationTool.general_polynomial, xdata=ppm, ydata=meas,
-                              p0=[1., 0.01], bounds=(0., np.inf))
-            elif used_order == 2:
-                z, _ = curve_fit(ToConcentrationTool.general_polynomial, xdata=ppm, ydata=meas,
-                              p0=[1., 0.01, 1.e-6], bounds=(0., np.inf))
-            elif used_order == 3:
-                z, _ = curve_fit(ToConcentrationTool.general_polynomial, xdata=ppm, ydata=meas,
-                              p0=[1., 0.01, 1.e-6, 1.e-9], bounds=(0., np.inf))
-            else:
-                return
+        if not ppm.tolist():
+            return
 
-            if self.mode == 'viscosity':
-                self.parent().parent().produced_fluids.ppm_to_cp_fit_params = z
-            else:
-                self.parent().parent().produced_fluids.ppm_to_abs_fit_params = z
-            fit_ppm = np.linspace(start=ppm[0], stop=ppm[-1])
-            fit_meas = ToConcentrationTool.general_polynomial(fit_ppm, *z)
-            self.fit_line.append(utils.series_to_polyline(fit_ppm.tolist(), fit_meas.tolist()))
-            self.fit_line.setColor(Qt.red)
+        self.x_axis.setMax(np.max(ppm))
+        self.y_axis.setMax(np.max(meas))
+        used_order = min(self.fit_order, len(ppm.tolist()) - 1)
+
+        meas_temp = self.parent().parent().produced_fluids.temperature
+        fl = self.parent().parent().parent().flood
+        fluids = fl.get_fluids_list()
+        base_visc = fluids[0].specific_fluid.brine.get_viscosity(meas_temp)
+        poly_fit = ToConcentrationTool.general_polynomial_fixed_intercept
+
+        if used_order == 1:
+            z, _ = curve_fit(poly_fit, xdata=ppm, ydata=meas - base_visc,
+                             p0=[0.01], bounds=(0., np.inf))
+        elif used_order == 2:
+            z, _ = curve_fit(poly_fit, xdata=ppm, ydata=meas - base_visc,
+                             p0=[0.01, 1.e-6], bounds=(0., np.inf))
+        else:
+            z, _ = curve_fit(poly_fit, xdata=ppm, ydata=meas - base_visc,
+                             p0=[0.01, 1.e-6, 1.e-9], bounds=(0., np.inf))
+
+        z = np.array([base_visc, *z])
+
+        if self.mode == 'viscosity':
+            self.parent().parent().produced_fluids.ppm_to_cp_fit_params = z
+        else:
+            self.parent().parent().produced_fluids.ppm_to_abs_fit_params = z
+        fit_ppm = np.linspace(start=ppm[0], stop=ppm[-1])
+        fit_meas = poly_fit(fit_ppm, *z[1:]) + base_visc
+        self.fit_line.append(utils.series_to_polyline(fit_ppm.tolist(), fit_meas.tolist()))
+        self.fit_line.setColor(Qt.red)
 
     @staticmethod
     def general_polynomial(x, *args):
         ans = 0.
         for i, arg in enumerate(args):
             ans += arg * np.power(x, i)
+        return ans
+
+    @staticmethod
+    def general_polynomial_fixed_intercept(x, *args):
+        ans = 0.
+        for i, arg in enumerate(args):
+            ans += arg * np.power(x, i + 1)
         return ans
 
     def closeEvent(self, a0: QCloseEvent):

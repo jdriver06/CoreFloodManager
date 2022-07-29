@@ -410,6 +410,9 @@ class SignalListWidget(QListWidget):
         item = super(SignalListWidget, self).item(row)
         super(SignalListWidget, self).takeItem(row)
         self.signal_list.item_names.pop(row)
+
+        obj.project_manager_list = None
+
         if hasattr(obj, '__del__'):
             obj.__del__()
 
@@ -663,6 +666,7 @@ class SignalListManagerWidget(QWidget):
                 return False
 
         s_list.objects[i].name = name
+        s_list.item_names[i] = name
         s_view.currentItem().setText(name)
 
         return True
